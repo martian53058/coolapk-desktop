@@ -1042,15 +1042,15 @@ pub(crate) fn base_http_client_builder() -> reqwest::ClientBuilder {
 fn build_api_clients(profile: &DeviceProfile) -> Result<(Client, Client), String> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, profile.user_agent.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static(super::native_device::COMPATIBILITY_UA)));
-    headers.insert("X-Sdk-Int", profile.sdk_int.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static("36")));
-    headers.insert("X-Sdk-Locale", HeaderValue::from_static("zh-CN"));
+    headers.insert("X-Sdk-Int", profile.sdk_int.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static("26.7")));
+    headers.insert("X-Sdk-Locale", HeaderValue::from_static("zh-HK"));
     headers.insert("X-App-Mode", HeaderValue::from_static("universal"));
     headers.insert("X-App-Channel", HeaderValue::from_static("coolapk"));
-    headers.insert("X-App-Id", HeaderValue::from_static("com.coolapk.market"));
-    headers.insert("X-App-Version", HeaderValue::from_static("16.2.0"));
-    headers.insert("X-App-Code", HeaderValue::from_static("2604201"));
+    headers.insert("X-App-Id", HeaderValue::from_static("com.coolapk.app"));
+    headers.insert("X-App-Version", HeaderValue::from_static("16.6.1"));
+    headers.insert("X-App-Code", HeaderValue::from_static("2610151"));
     headers.insert("X-Api-Version", HeaderValue::from_static("16"));
-    headers.insert("X-App-Supported", HeaderValue::from_static("2604201"));
+    headers.insert("X-App-Supported", HeaderValue::from_static("2610151"));
     headers.insert("X-Dark-Mode", HeaderValue::from_static("0"));
     let client = http_client_builder().default_headers(headers.clone()).build().map_err(|_| "创建酷安 HTTP 客户端失败".to_string())?;
     let redirect_client = http_client_builder().default_headers(headers).redirect(reqwest::redirect::Policy::none()).build().map_err(|_| "创建酷安重定向客户端失败".to_string())?;
@@ -1252,7 +1252,9 @@ impl CoolapkClient {
     ) -> Result<reqwest::RequestBuilder, String> {
         let profile = self.effective_device_profile();
         let mut request = request;
-        if let Ok(header_value) = HeaderValue::from_str(device_code) {
+        // X-App-Device 由 UUID 设备码 + 固定 iOS 硬件信息派生（与官方 iCoolMarket 一致）。
+        let app_device = build_x_app_device(device_code);
+        if let Ok(header_value) = HeaderValue::from_str(&app_device) {
             request = request.header("X-App-Device", header_value);
         }
         for (header_name, value) in [
@@ -1445,15 +1447,15 @@ impl CoolapkClient {
         let request = request
             .header("X-App-Token", self.get_token()?)
             .header("X-Requested-With", "XMLHttpRequest")
-            .header("X-Sdk-Int", "36")
-            .header("X-Sdk-Locale", "zh-CN")
+            .header("X-Sdk-Int", "26.7")
+            .header("X-Sdk-Locale", "zh-HK")
             .header("X-App-Mode", "universal")
             .header("X-App-Channel", "coolapk")
-            .header("X-App-Id", "com.coolapk.market")
-            .header("X-App-Version", "16.2.0")
-            .header("X-App-Code", "2604201")
+            .header("X-App-Id", "com.coolapk.app")
+            .header("X-App-Version", "16.6.1")
+            .header("X-App-Code", "2610151")
             .header("X-Api-Version", "16")
-            .header("X-App-Supported", "2604201")
+            .header("X-App-Supported", "2610151")
             .header("X-Dark-Mode", "0");
         self.apply_device_profile(request)
     }
@@ -1843,7 +1845,8 @@ impl CoolapkClient {
         // 这样既能避开登录设备触发的 -415，也不会改变已绑定账号的写操作指纹。
         let public_device_code = device_code_with_profile(&self.guest_device_code(), &self.effective_device_profile());
         let public_token = CoolapkAuth::new(public_device_code.clone()).get_app_token()?;
-        let device_header = HeaderValue::from_str(&public_device_code)
+        let public_app_device = build_x_app_device(&public_device_code);
+        let device_header = HeaderValue::from_str(&public_app_device)
             .map_err(|_| "公开读取设备码格式无效".to_string())?;
         log::debug!("api.guest_request path={} cookie_attached=false", log_path);
         let response = self
@@ -3835,7 +3838,7 @@ impl CoolapkClient {
         // APK UserAgentHandler 经 C2304 添加 (#Build; ...) 后追加 CoolMarket 版本。
         // 缺少 Build 段时，服务端会将该页面判为普通移动浏览器并拒绝访问。
         let response = request.timeout(std::time::Duration::from_secs(20)).query(query)
-            .header(USER_AGENT, "Mozilla/5.0 (Linux; Android 14; wv) AppleWebKit/537.36 Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 (#Build; nubia; NX789J; AQ3A.250226.002; Android) +CoolMarket/16.6.2-2609151-universal")
+            .header(USER_AGENT, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; MYEV3CH/A; iPhone17,3; iOS_26.7) +iCoolMarket/16.6.1-2610151")
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Referer", "https://m.coolapk.com/mp/userPlugin/myPlugin?autoTheme=1")
             .header("Origin", "https://m.coolapk.com")
@@ -3895,7 +3898,7 @@ impl CoolapkClient {
         if is_coolapk_target && url.contains("coolapk.com/feed/") {
             request = request
                 .header("X-Requested-With", "XMLHttpRequest")
-                .header("X-App-Id", "com.coolapk.market");
+                .header("X-App-Id", "com.coolapk.app");
         }
 
         let cookie = self
@@ -7062,9 +7065,9 @@ impl CoolapkClient {
         let profile = self.effective_device_profile();
         // 覆盖默认 UA 和自定义 UA，避免从 #Build 或 Dalvik 片段重新识别机型。
         let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_str(&format!("CoolMarket/{}-{}-universal",
-            profile.app_version.as_deref().unwrap_or("16.2.0"),
-            profile.app_code.as_deref().unwrap_or("2604201"))).map_err(|_| "发布 UA 格式无效")?);
+        headers.insert(USER_AGENT, HeaderValue::from_str(&format!("+iCoolMarket/{}-{}",
+            profile.app_version.as_deref().unwrap_or("16.6.1"),
+            profile.app_code.as_deref().unwrap_or("2610151"))).map_err(|_| "发布 UA 格式无效")?);
         Ok(request.headers(headers))
     }
 
@@ -8841,81 +8844,71 @@ fn is_valid_device_code(code: &str) -> bool {
     false
 }
 
-/// 根据指定的数盟设备 ID（设备ID / ShuzlmID）生成官方标准设备码。
-///
-/// 官方标准 X-App-Device 格式为：
-/// `{device_id}; ; ; ; {manufacturer}; {brand}; {model}; {build}; {oaid}`
-/// 经 Base64 编码、字符逆序并剔除换行与 `=` 填充符生成。
+/// 新版（iOS 伪装）设备码即 UUID 大写字符串，直接作为身份标识；
+/// X-App-Device 由 [`build_x_app_device`] 派生。此函数保留以兼容旧调用方。
 fn device_code_without_model(code: &str) -> Result<String, String> {
-    let mut encoded: String = code.chars().rev().collect();
-    while encoded.len() % 4 != 0 { encoded.push('='); }
-    let raw = BASE64.decode(encoded).ok().and_then(|bytes| String::from_utf8(bytes).ok()).ok_or("发布设备码格式无效")?;
-    let mut fields: Vec<&str> = raw.split(';').map(str::trim).collect();
-    if fields.len() != 9 { return Err("发布设备码格式无效".into()); }
-    // 保留设备标识/OAID 等身份字段，仅清除厂商、品牌、机型和 Build。
-    fields[4..8].fill("");
-    Ok(BASE64.encode(fields.join("; ")).chars().rev().filter(|value| *value != '=').collect())
+    Ok(normalize_device_uuid(code))
 }
 
-fn device_code_with_profile(code: &str, profile: &DeviceProfile) -> String {
-    let mut encoded: String = code.chars().rev().collect();
-    while encoded.len() % 4 != 0 { encoded.push('='); }
-    let Some(raw) = BASE64.decode(&encoded).ok().and_then(|bytes| String::from_utf8(bytes).ok()) else {
-        return code.to_string();
-    };
-    let mut fields: Vec<String> = raw.split(';').map(|field| field.trim().to_string()).collect();
-    if fields.len() != 9 { return code.to_string(); }
-    for (index, value, fallback) in [
-        (4, profile.manufacturer.as_deref(), "Xiaomi"),
-        (5, profile.brand.as_deref(), "Redmi"),
-        (6, profile.model.as_deref(), "23113RKC6C"),
-        (7, profile.build.as_deref(), "AQ3A.250226.002"),
-    ] {
-        fields[index] = value.map(str::trim).filter(|value| !value.is_empty()).unwrap_or(fallback).to_string();
+/// 新版设备码是 UUID，无需再注入机型信息；此函数仅做格式规范化，保留以兼容旧调用方。
+fn device_code_with_profile(code: &str, _profile: &DeviceProfile) -> String {
+    normalize_device_uuid(code)
+}
+
+/// 将旧的 Base64 设备码或任意输入规范化为新的 UUID 大写格式。
+/// 已经是合法 UUID 的原样返回；否则基于输入派生一个稳定 UUID。
+fn normalize_device_uuid(code: &str) -> String {
+    let trimmed = code.trim();
+    if trimmed.len() == 36
+        && trimmed.chars().nth(8) == Some('-')
+        && trimmed.chars().nth(13) == Some('-')
+        && trimmed.chars().nth(18) == Some('-')
+        && trimmed.chars().nth(23) == Some('-')
+        && trimmed.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    {
+        return trimmed.to_uppercase();
     }
-    let mut result: String = BASE64.encode(fields.join("; ")).chars().rev().collect();
-    result.retain(|char| char != '=');
-    result
+    // 旧设备码（Base64 反转格式）无法直接转为 UUID，基于其内容派生一个稳定 UUID。
+    use md5::{Digest, Md5};
+    let mut hasher = Md5::new();
+    hasher.update(trimmed.as_bytes());
+    let digest = hasher.finalize();
+    let hex = hex::encode(digest);
+    format!(
+        "{}-{}-4{}-{}{}-{}",
+        &hex[0..8], &hex[8..12], &hex[13..16],
+        match u8::from_str_radix(&hex[16..18], 16).unwrap_or(0) & 0x3 | 0x8 {
+            v => format!("{v:02x}"),
+        },
+        &hex[18..20], &hex[20..32],
+    )
+    .to_uppercase()
 }
 
 fn generate_device_code_with_device_id(
     device_id: &str,
-    model: Option<&str>,
-    build: Option<&str>,
+    _model: Option<&str>,
+    _build: Option<&str>,
 ) -> String {
-    let model = model.filter(|s| !s.trim().is_empty()).unwrap_or("23113RKC6C");
-    let build = build.filter(|s| !s.trim().is_empty()).unwrap_or("AQ3A.250226.002");
-    let raw = format!("{device_id}; ; ; ; Xiaomi; Xiaomi; {model}; {build}; ");
-    let b64 = BASE64.encode(raw.as_bytes());
-    let mut rev: String = b64.chars().rev().collect();
-    rev.retain(|c| c != '=' && c != '\r' && c != '\n');
-    rev
+    normalize_device_uuid(device_id)
 }
 
-/// v1.9.1 及更早版本使用的账号设备码。
-///
-/// 账号请求身份由 UID 派生 Android ID，再按官方客户端的逆序 Base64
-/// 格式生成。该函数只生成设备码；`ddid` 由请求层按设置和接口路径添加。
+/// 账号设备码：由 UID 派生稳定 UUID。
 fn generate_device_code_for_id(uid: &str) -> String {
-    use md5::{Digest, Md5};
-
-    let mut hasher = Md5::new();
-    hasher.update(uid.as_bytes());
-    let digest = hasher.finalize();
-    let android_id = format!(
-        "{:016x}",
-        u64::from_le_bytes(digest[..8].try_into().unwrap_or_default())
-    );
-    let raw = format!(
-        "{android_id}; ; ; ; Xiaomi; Xiaomi; 23113RKC6C; UKQ1.230804.001; "
-    );
-    let b64 = BASE64.encode(raw.as_bytes());
-    let mut rev: String = b64.chars().rev().collect();
-    rev.retain(|c| c != '=' && c != '\r' && c != '\n');
-    rev
+    normalize_device_uuid(uid)
 }
 
-/// 生成随机设备码（官方标准逆序 Base64 格式）
+/// 计算新版 iOS 伪装方案的 X-App-Device：
+/// `reverse( Base64(device_id + "; " + hardware_id + "/" + sales_model) )`，去掉 `=`。
+/// 与 c001apk-next V1.0.8 中 `f0.f.a()` 一致。
+pub(crate) fn build_x_app_device(device_id: &str) -> String {
+    use super::native_device::{IOS_HARDWARE_ID, IOS_SALES_MODEL};
+    let joined = format!("{device_id}; {IOS_HARDWARE_ID}/{IOS_SALES_MODEL}");
+    let b64 = BASE64.encode(joined.as_bytes());
+    b64.chars().rev().filter(|c| *c != '=').collect()
+}
+
+/// 生成随机设备码（UUID v4 大写格式，与 iOS 客户端 idfv 一致）。
 fn generate_random_device_code() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     use md5::{Digest, Md5};
@@ -8933,15 +8926,21 @@ fn generate_random_device_code() -> String {
     let mut hasher = Md5::new();
     hasher.update(seed.to_string().as_bytes());
     let digest = hasher.finalize();
-    let android_id = format!(
-        "{:016x}",
-        u64::from_le_bytes(digest[..8].try_into().unwrap_or_default())
-    );
-    let raw = format!("{android_id}; ; ; ; Xiaomi; Xiaomi; 23113RKC6C; UKQ1.230804.001; ");
-    let b64 = BASE64.encode(raw.as_bytes());
-    let mut rev: String = b64.chars().rev().collect();
-    rev.retain(|c| c != '=' && c != '\r' && c != '\n');
-    rev
+    // 构造 UUID v4 风格的大写字符串：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+    let hex = hex::encode(digest);
+    format!(
+        "{}-{}-4{}-{}{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[13..16],
+        // variant 位固定为 8/9/a/b
+        match u8::from_str_radix(&hex[16..18], 16).unwrap_or(0) & 0x3 | 0x8 {
+            v => format!("{v:02x}"),
+        },
+        &hex[18..20],
+        &hex[20..32],
+    )
+    .to_uppercase()
 }
 
 fn value_to_string(value: &Value) -> String {
