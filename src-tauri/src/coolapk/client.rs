@@ -2759,13 +2759,21 @@ impl CoolapkClient {
             return Err(format!("disallowed non-Coolapk host: {host}"));
         }
 
-        let res = self
-            .api_client()?
-            .get(full_url)
-            .header("X-App-Token", token)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+        let request = self.apply_device_profile(
+            self.api_client()?
+                .get(full_url)
+                .header("X-App-Token", token)
+                .header("X-Requested-With", "XMLHttpRequest"),
+        )?;
+        let mut request = request;
+        let cookie = self.user_cookie.read().map_err(|_| "failed to read login state".to_string())?.clone();
+        if let Some(cookie) = cookie {
+            let full_cookie = self.cookie_for_path(&cookie, parsed.path());
+            if let Ok(header_value) = HeaderValue::from_str(&full_cookie) {
+                request = request.header(COOKIE, header_value);
+            }
+        }
+        let res = request.send().await.map_err(|e| e.to_string())?;
 
         let json_data = response_json(res).await?;
         let cleaned_list = Self::extract_cleaned_list(&json_data);
