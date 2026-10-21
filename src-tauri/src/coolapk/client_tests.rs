@@ -1721,7 +1721,15 @@ fn test_native_device_profile_survives_settings_sync_and_custom_reset() {
     let fields = decode_x_app_device_header(&customized);
     assert_eq!(fields[0], "saved-device-id");
     assert_eq!(&fields[4..8], &["Xiaomi".to_string(), "Redmi".to_string(), "24117RK2CC".to_string(), "custom-build".to_string()]);
-    assert_eq!(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed").header("X-App-Token", client.get_token().unwrap()).build().unwrap().headers()["X-App-Id"], "com.coolapk.market");
+    let request = client.apply_device_profile(
+        client.api_client().unwrap()
+            .post("https://api.coolapk.com/v6/feed/createFeed")
+            .header("X-App-Token", client.get_token().unwrap()),
+    ).unwrap().build().unwrap();
+    assert_eq!(request.headers()["X-App-Id"], "com.coolapk.market");
+    assert_eq!(request.headers()["X-App-Code"], "2607021");
+    assert_eq!(request.headers()["X-App-Supported"], "2607021");
+    assert_eq!(request.headers()["X-App-Device"], customized);
 
     client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
     let reset = client.device_code.read().unwrap().clone();
