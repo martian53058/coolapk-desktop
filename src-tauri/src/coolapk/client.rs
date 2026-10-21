@@ -1452,13 +1452,7 @@ impl CoolapkClient {
     ) -> Result<reqwest::RequestBuilder, String> {
         let request = request
             .header("X-App-Token", self.get_token()?)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("X-Sdk-Int", "26.7")
-            .header("X-Sdk-Locale", "zh-HK")
-            .header("X-App-Id", "com.coolapk.app")
-            .header("X-App-Version", "16.6.1")
-            .header("X-App-Code", "2610151")
-            .header("X-Api-Version", "16");
+            .header("X-Requested-With", "XMLHttpRequest");
         self.apply_device_profile(request)
     }
 
@@ -7055,12 +7049,11 @@ impl CoolapkClient {
         self.submit_create_feed_form_with_device(form, failure_prefix, true).await
     }
 
-    fn create_feed_request(&self, form: &[(&str, String)], include_device_model: bool) -> Result<reqwest::RequestBuilder, String> {
-        let code = self.device_code.read().map_err(|_| "failed to read device code")?.clone();
-        let code = if include_device_model { code } else { device_code_without_model(&code)? };
-        // 发布时单独签名，不能改动共享登录指纹或影响并发请求。
-        let token = CoolapkAuth::new(code.clone()).get_app_token()?;
-        let request = self.apply_device_profile_with_code(
+    fn create_feed_request(&self, form: &[(&str, String)], _include_device_model: bool) -> Result<reqwest::RequestBuilder, String> {
+        // Token V3 与 X-App-Device 必须使用同一份完整设备码及同一版本码。
+        // 可用手机版不通过临时 UUID 或空机型头切换身份，因此发布也复用统一设备配置。
+        let token = self.get_token()?;
+        let request = self.apply_device_profile(
             self.api_client()?
                 .request(
                     reqwest::Method::POST,
@@ -7069,17 +7062,8 @@ impl CoolapkClient {
                 .header("X-App-Token", token)
                 .header("X-Requested-With", "XMLHttpRequest")
                 .form(form),
-            &code,
-            include_device_model,
         )?;
-        if include_device_model { return Ok(request); }
-        let profile = self.effective_device_profile();
-        // 覆盖默认 UA 和自定义 UA，避免从 #Build 或 Dalvik 片段重新识别机型。
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_str(&format!("+iCoolMarket/{}-{}",
-            profile.app_version.as_deref().unwrap_or("16.6.1"),
-            profile.app_code.as_deref().unwrap_or("2610151"))).map_err(|_| "发布 UA 格式无效")?);
-        Ok(request.headers(headers))
+        Ok(request)
     }
 
     async fn submit_create_feed_form_with_device(&self, form: Vec<(&'static str, String)>, failure_prefix: &str, include_device_model: bool) -> Result<Value, String> {
