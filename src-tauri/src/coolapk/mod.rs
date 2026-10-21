@@ -1,4 +1,5 @@
 pub mod auth;
+pub(crate) mod ios_protocol;
 pub mod android_notifications;
 pub mod client;
 pub(crate) mod http_session;

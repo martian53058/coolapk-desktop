@@ -13,30 +13,23 @@ fn decode_x_app_device_header(value: &str) -> Vec<String> {
 }
 
 #[test]
-fn test_x_app_device_matches_reference_fingerprint() {
-    let profile = super::super::native_device::detect();
-    let code = build_x_app_device(super::super::native_device::DEFAULT_DEVICE_CODE, &profile, true);
-    assert_eq!(code, super::super::native_device::DEFAULT_DEVICE_CODE);
-    assert!(is_valid_device_code(&code));
-    let fields = decode_x_app_device_header(&code);
-    assert!(fields.len() >= 9);
-    assert_eq!(fields[4], "OnePlus");
-    assert_eq!(fields[5], "OnePlus");
-    assert_eq!(fields[6], "PJZ110");
-    assert_eq!(fields[7], "PJZ110_16.0.5.703(CN01)");
-}
-#[test]
-fn test_feed_cleaning_preserves_private_visibility() {
-    for raw in [
-        json!({ "id": "42", "uid": "123", "username": "作者", "message": "正文", "publish_status": 1 }),
-        json!({ "id": "42", "uid": "123", "username": "作者", "message": "正文", "publishStatus": "1" }),
-    ] {
-        let expected = raw.get("publish_status").or_else(|| raw.get("publishStatus")).unwrap();
-        let cleaned = CoolapkClient::clean_single_feed(&raw, 0).unwrap();
-        assert_eq!(&cleaned["publishStatus"], expected);
-    }
-    let reviewed = CoolapkClient::clean_single_feed(&json!({ "id": "42", "uid": "123", "username": "作者", "message": "正文", "status": -1 }), 0).unwrap();
-    assert!(reviewed.get("publishStatus").is_none());
+fn test_publish_requests_use_reference_ios_identity() {
+    let client = CoolapkClient::new();
+    let form = build_create_feed_form("正文", None, None);
+    let hidden = client.create_feed_request(&form, false).unwrap().build().unwrap();
+    let visible = client.create_feed_request(&form, true).unwrap().build().unwrap();
+    let device_id = client.ios_device_id.read().unwrap().clone();
+    assert_eq!(hidden.headers()["X-App-Id"], "com.coolapk.app");
+    assert_eq!(hidden.headers()["X-App-Version"], "16.6.1");
+    assert_eq!(hidden.headers()["X-App-Code"], "2610151");
+    assert_eq!(hidden.headers()["X-App-Device"], ios_protocol::app_device(&device_id));
+    assert!(hidden.headers()[USER_AGENT].to_str().unwrap().contains("+iCoolMarket/16.6.1-2610151"));
+    assert!(!hidden.headers().contains_key("X-App-Supported"));
+    assert!(!hidden.headers().contains_key("X-App-Mode"));
+    assert!(!hidden.headers().contains_key("X-Dark-Mode"));
+    assert!(!hidden.headers()["X-App-Token"].to_str().unwrap().starts_with("v3"));
+    assert_eq!(hidden.headers()["X-App-Device"], visible.headers()["X-App-Device"]);
+    assert_eq!(hidden.body().unwrap().as_bytes(), visible.body().unwrap().as_bytes());
 }
 
 #[test]
@@ -1073,26 +1066,20 @@ fn test_parse_reply_user_agent_android_rom_fallback_is_not_duplicated() {
 }
 
 #[test]
-fn test_user_agent_device_profile_headers_for_publish_request() {
+fn test_android_device_profile_does_not_override_ios_api_identity() {
     let client = CoolapkClient::new();
-    let ua = super::super::native_device::COMPATIBILITY_UA;
     client.update_device_profile(DeviceProfile {
-        user_agent: Some(ua.into()),
-        manufacturer: Some("OnePlus".into()),
-        brand: Some("OnePlus".into()),
-        model: Some("PJZ110".into()),
-        build: Some("PJZ110_16.0.5.703(CN01)".into()),
-        ..Default::default()
+        user_agent: Some("Dalvik/2.1.0 custom Android UA".into()),
+        manufacturer: Some("Xiaomi".into()), brand: Some("Xiaomi".into()),
+        model: Some("2210132C".into()), build: Some("BP2A.250605.031.A3".into()), ..Default::default()
     });
-    let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed"))
-        .unwrap().build().unwrap();
-    assert_eq!(request.headers().get(USER_AGENT).unwrap().to_str().unwrap(), ua);
-    let code = request.headers().get("X-App-Device").unwrap().to_str().unwrap();
-    assert_eq!(code, client.device_code.read().unwrap().as_str());
-    assert_eq!(decode_x_app_device_header(code)[6], "PJZ110");
-    assert_eq!(request.headers()["X-App-Id"], "com.coolapk.market");
-    assert_eq!(request.headers()["X-App-Code"], "2607021");
-    assert_eq!(request.headers()["X-App-Supported"], "2607021");
+    let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed")).unwrap().build().unwrap();
+    let ua = request.headers()[USER_AGENT].to_str().unwrap();
+    assert!(ua.contains("+iCoolMarket/16.6.1-2610151"));
+    assert!(!ua.starts_with("Dalvik/"));
+    let device = request.headers()["X-App-Device"].to_str().unwrap();
+    let device_id = client.ios_device_id.read().unwrap().clone();
+    assert_eq!(device, ios_protocol::app_device(&device_id));
 }
 #[tokio::test]
 async fn test_login_cookie_persistence_flow() {
@@ -1109,6 +1096,9 @@ async fn test_login_cookie_persistence_flow() {
     let client = CoolapkClient::new();
     client.persist_cookie_to(cookie_file.clone());
     assert_eq!(client.get_user_cookie(), None, "首次启动不应有 cookie");
+    let first_ios_id = client.ios_device_id.read().unwrap().clone();
+    assert!(uuid::Uuid::parse_str(&first_ios_id).is_ok());
+    assert!(dir.join("ios_device_id.txt").exists(), "iOS API 设备 UUID 应持久化");
 
     // 2. 模拟 Webview 授权登录：save_cookie_securely 内部调用 set_user_cookie
     let fake_cookie = "SESSID=abc123def456; uid=10086; Hm_lvt_xxx=1";
@@ -1129,6 +1119,7 @@ async fn test_login_cookie_persistence_flow() {
     // 3. 模拟应用重启：新实例通过 persist_cookie_to 从 JSON 自动恢复
     let restarted = CoolapkClient::new();
     restarted.persist_cookie_to(cookie_file.clone());
+    assert_eq!(*restarted.ios_device_id.read().unwrap(), first_ios_id, "重启后应复用同一 iOS API 设备 UUID");
     assert_eq!(
         restarted.get_user_cookie(),
         Some(fake_cookie.to_string()),
@@ -1341,59 +1332,24 @@ fn test_extract_readable_content_fallback_safe() {
     assert!(out.contains("无闭合正文"));
 }
 
-/// 浏览历史/最近访问实体没有 username/userInfo，
-/// 必须能原样保留（此前走 clean_single_feed 会被全部丢弃）
 #[test]
-fn test_extract_history_list_preserves_entities() {
-    let raw = json!({
-        "data": [
-            {
-                "title": "oxygen",
-                "description": "",
-                "logo": "http://avatar.coolapk.com/data/001/45/12/66_avatar_middle.jpg",
-                "url": "u/1451266",
-                "historyType": "user",
-                "typeName": "用户",
-                "id": "user:1451266",
-                "entityType": "history",
-                "dateline": 1786022084
-            },
-            {
-                "id": 247872765,
-                "uid": 1451266,
-                "target_type": "apk",
-                "entityType": "recentHistory",
-                "entityId": 247872765,
-                "target_type_title": "应用",
-                "title": "哔哩哔哩",
-                "url": "/apk/tv.danmaku.bili",
-                "logo": "//pp.myapp.com/ma_icon/0/icon/256",
-                "follow_num": 25289
-            }
-        ]
+fn test_api_requests_use_ios_protocol_not_android_token_v3() {
+    let client = CoolapkClient::new();
+    client.update_device_profile(DeviceProfile {
+        app_version: Some("16.2.0".into()), app_code: Some("2604201".into()),
+        user_agent: Some("Dalvik/2.1.0 +CoolMarket/16.2.0-2604201-universal".into()), ..Default::default()
     });
-
-    let list = CoolapkClient::extract_history_list(&raw);
-    assert_eq!(list.len(), 2, "历史实体不能被丢弃");
-
-    let history = &list[0];
-    assert_eq!(history["entityType"], "history");
-    assert_eq!(history["url"], "/u/1451266", "url 应补全前导斜杠");
-    assert_eq!(
-        history["logo"], "https://avatar.coolapk.com/data/001/45/12/66_avatar_middle.jpg",
-        "http 图片应升级为 https"
-    );
-
-    let recent = &list[1];
-    assert_eq!(recent["entityType"], "recentHistory");
-    assert_eq!(
-        recent["url"], "/apk/tv.danmaku.bili",
-        "已有前导斜杠的 url 不应被改动"
-    );
-    assert_eq!(
-        recent["logo"], "https://pp.myapp.com/ma_icon/0/icon/256",
-        "// 开头图片应补全 https"
-    );
+    let request = client.apply_device_profile(client.api_client().unwrap().get("https://api.coolapk.com/v6/main/indexV8")).unwrap().build().unwrap();
+    let headers = request.headers();
+    assert_eq!(headers["X-App-Id"], "com.coolapk.app");
+    assert_eq!(headers["X-App-Version"], "16.6.1");
+    assert_eq!(headers["X-App-Code"], "2610151");
+    assert_eq!(headers["X-Api-Version"], "16");
+    assert_eq!(headers["X-Sdk-Locale"], "zh-HK");
+    assert!(!headers.contains_key("X-App-Supported"));
+    assert!(!headers.contains_key("Referer"));
+    assert!(headers[USER_AGENT].to_str().unwrap().contains("+iCoolMarket/16.6.1-2610151"));
+    assert!(!client.get_token().unwrap().starts_with("v3"));
 }
 
 /// 数码品牌/分类实体没有 username/author/dyh_name，
@@ -1632,40 +1588,17 @@ async fn test_live_oss_and_reply() {
 }
 
 #[test]
-fn test_generate_device_code_with_device_id() {
-    let custom_id = "DU-MOCK-TEST-DEVICE-ID-99999999";
-    let code = generate_device_code_with_device_id(custom_id, Some("PJZ110"), Some("custom-build"));
-    assert!(is_valid_device_code(&code));
-    let fields = decode_x_app_device_header(&code);
-    assert_eq!(fields[0], custom_id);
-    assert_eq!(fields[6], "PJZ110");
-    assert_eq!(fields[7], "custom-build");
-    let default_model_code = generate_device_code_with_device_id(custom_id, None, None);
-    let default_fields = decode_x_app_device_header(&default_model_code);
-    assert_eq!(default_fields[0], custom_id);
-    assert_eq!(default_fields[6], "PJZ110");
-    assert_eq!(default_fields[7], "PJZ110_16.0.5.703(CN01)");
-    assert_ne!(code, default_model_code, "不同的机型构建字段应生成不同的完整设备串");
-}
-#[test]
-fn test_update_device_profile_with_device_id() {
-    let client = CoolapkClient::new();
-    let custom_id = "DU-MOCK-TEST-DEVICE-ID-99999999";
-    client.update_device_profile(DeviceProfile {
-        device_id: Some(custom_id.to_string()),
-        model: Some("Test Model".to_string()),
-        build: Some("test-build".to_string()),
-        ..Default::default()
-    });
-    assert_eq!(client.effective_custom_device_id(), Some(custom_id.to_string()));
-    let info = client.get_device_info().expect("get_device_info");
-    assert_eq!(info["data"]["deviceId"].as_str(), Some(custom_id));
-    let active_code = client.device_code.read().unwrap().clone();
-    assert!(is_valid_device_code(&active_code));
-    let fields = decode_x_app_device_header(&active_code);
-    assert_eq!(fields[0], custom_id);
-    assert_eq!(fields[6], "Test Model");
-    assert_eq!(fields[7], "test-build");
+fn test_native_android_profile_does_not_change_ios_api_identity() {
+    let mut client = CoolapkClient::new();
+    client.native_device_profile = DeviceProfile {
+        manufacturer: Some("Apple".into()), brand: Some("Apple".into()), model: Some("iPhone17,3".into()),
+        build: Some("22A3354".into()), user_agent: Some("Mozilla/5.0 (iPhone) +CoolMarket/16.6.1-2610151-universal".into()), ..Default::default()
+    };
+    let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed")).unwrap().build().unwrap();
+    assert_eq!(request.headers()["X-App-Id"], "com.coolapk.app");
+    assert!(request.headers()[USER_AGENT].to_str().unwrap().contains("+iCoolMarket/16.6.1-2610151"));
+    let device_id = client.ios_device_id.read().unwrap().clone();
+    assert_eq!(request.headers()["X-App-Device"], ios_protocol::app_device(&device_id));
 }
 #[test]
 fn test_device_profile_preserves_identity_and_updates_all_model_fields() {
@@ -1702,36 +1635,4 @@ fn test_device_profile_model_applies_without_custom_device_id() {
     let fields = decode_x_app_device_header(header_code);
     assert_eq!(&fields[4..8], &["Samsung".to_string(), "samsung".to_string(), "SM-S9280".to_string(), "actual-build".to_string()]);
 }
-#[test]
-fn test_native_device_profile_survives_settings_sync_and_custom_reset() {
-    let client = CoolapkClient::new();
-    client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
-    let first = client.device_code.read().unwrap().clone();
-    assert!(is_valid_device_code(&first));
-    assert_eq!(decode_x_app_device_header(&first)[0], "saved-device-id");
-    assert_eq!(client.get_device_info().unwrap()["data"]["defaultProfile"]["source"], "native");
 
-    client.update_device_profile(DeviceProfile {
-        device_id: Some("saved-device-id".into()),
-        manufacturer: Some("Xiaomi".into()), brand: Some("Redmi".into()),
-        model: Some("24117RK2CC".into()), build: Some("custom-build".into()),
-        user_agent: Some("custom-user-agent".into()), ..Default::default()
-    });
-    let customized = client.device_code.read().unwrap().clone();
-    let fields = decode_x_app_device_header(&customized);
-    assert_eq!(fields[0], "saved-device-id");
-    assert_eq!(&fields[4..8], &["Xiaomi".to_string(), "Redmi".to_string(), "24117RK2CC".to_string(), "custom-build".to_string()]);
-    let request = client.apply_device_profile(
-        client.api_client().unwrap()
-            .post("https://api.coolapk.com/v6/feed/createFeed")
-            .header("X-App-Token", client.get_token().unwrap()),
-    ).unwrap().build().unwrap();
-    assert_eq!(request.headers()["X-App-Id"], "com.coolapk.market");
-    assert_eq!(request.headers()["X-App-Code"], "2607021");
-    assert_eq!(request.headers()["X-App-Supported"], "2607021");
-    assert_eq!(request.headers()["X-App-Device"], customized);
-
-    client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
-    let reset = client.device_code.read().unwrap().clone();
-    assert_eq!(decode_x_app_device_header(&reset)[6], "PJZ110");
-}

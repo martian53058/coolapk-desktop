@@ -1,5 +1,6 @@
 use super::http_session::{session, Policy as SessionPolicy};
-use crate::coolapk::auth::CoolapkAuth;
+use super::ios_protocol;
+use crate::coolapk::auth::{CoolapkAuth, DEFAULT_APP_CODE};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::header::{COOKIE, HeaderMap, HeaderValue, LOCATION, USER_AGENT};
 use reqwest::{Client, Method};
@@ -250,6 +251,8 @@ pub struct CoolapkClient {
     device_profile: RwLock<DeviceProfile>,
     native_device_profile: DeviceProfile,
     device_code: RwLock<String>,
+    /// Stable anonymous iOS-style device UUID used by the current working mobile protocol.
+    ios_device_id: RwLock<String>,
 }
 
 pub struct ProxiedVideoResponse {
@@ -528,9 +531,9 @@ fn build_forward_form(message: &str, pic: Option<&str>, forward_id: &str) -> Vec
     form
 }
 
-/// 设备信息覆盖配置（由设置页"设备信息"下发，作用于 API 请求头和设备身份）。
-/// 字段为 None 时使用客户端默认值；全部留空表示恢复默认。
-/// device_id 用于 X-App-Device；ddid 仅在服务端要求 DDI 的写接口中作为 Cookie 发送。
+/// 兼容旧设置页的设备信息覆盖配置。
+/// 当前 API 读请求使用 `ios_protocol` 的固定 iOS 档案；这些字段仍供旧设备码、网页挂件和部分兼容流程使用。
+/// device_id 是旧设备码首字段；ddid 仅在指定写接口中作为 Cookie 发送。
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceProfile {
@@ -564,8 +567,7 @@ pub struct DeviceProfile {
     pub dark_mode: Option<String>,
 }
 
-/// 移动端 UA：酷安网页（账号安全页/移动版页面）在桌面 UA 下会白屏或重定向
-const MOBILE_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1";
+/// 酷安域名使用与当前可运行移动客户端一致的 iOS UA；第三方站点仍使用普通浏览器 UA。
 
 /// 从 HTML 中提取 <title> 文本（大小写不敏感，无正则依赖）
 fn extract_html_title(html: &str) -> Option<String> {
@@ -1039,25 +1041,21 @@ pub(crate) fn base_http_client_builder() -> reqwest::ClientBuilder {
     builder
 }
 
-fn build_api_clients(profile: &DeviceProfile) -> Result<(Client, Client), String> {
-    use super::native_device::{APP_CHANNEL, APP_CODE, APP_ID, APP_MODE, APP_VERSION};
-    let app_code = profile.app_code.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(APP_CODE);
-    let app_version = profile.app_version.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(APP_VERSION);
+fn build_api_clients(_profile: &DeviceProfile) -> Result<(Client, Client), String> {
+    // The supplied working mobile client uses iOS identity for Coolapk API traffic.
+    // Do not retain Android-only defaults (X-App-Supported, X-App-Mode, X-Dark-Mode,
+    // Android app id, or Android Referer) alongside the iOS signature.
     let mut headers = HeaderMap::new();
     headers.insert("Accept", HeaderValue::from_static("*/*"));
-    headers.insert("Accept-Language", HeaderValue::from_static("zh-CN"));
+    headers.insert("Accept-Language", HeaderValue::from_static(ios_protocol::ACCEPT_LANGUAGE));
+    headers.insert(USER_AGENT, HeaderValue::from_str(&ios_protocol::default_user_agent()).map_err(|_| "默认 iOS User-Agent 格式无效".to_string())?);
     headers.insert("X-Requested-With", HeaderValue::from_static("XMLHttpRequest"));
-    headers.insert(USER_AGENT, profile.user_agent.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static(super::native_device::COMPATIBILITY_UA)));
-    headers.insert("X-Sdk-Int", HeaderValue::from_str(profile.sdk_int.as_deref().unwrap_or(super::native_device::SDK_INT)).unwrap_or_else(|_| HeaderValue::from_static(super::native_device::SDK_INT)));
-    headers.insert("X-Sdk-Locale", HeaderValue::from_str(profile.locale.as_deref().unwrap_or("zh-CN")).unwrap_or_else(|_| HeaderValue::from_static("zh-CN")));
-    headers.insert("X-App-Id", HeaderValue::from_static(APP_ID));
-    headers.insert("X-App-Version", HeaderValue::from_str(app_version).unwrap_or_else(|_| HeaderValue::from_static(APP_VERSION)));
-    headers.insert("X-App-Code", HeaderValue::from_str(app_code).unwrap_or_else(|_| HeaderValue::from_static(APP_CODE)));
-    headers.insert("X-Api-Version", HeaderValue::from_str(profile.api_version.as_deref().unwrap_or("16")).unwrap_or_else(|_| HeaderValue::from_static("16")));
-    headers.insert("X-App-Supported", HeaderValue::from_str(app_code).unwrap_or_else(|_| HeaderValue::from_static(APP_CODE)));
-    headers.insert("X-App-Channel", HeaderValue::from_static(APP_CHANNEL));
-    headers.insert("X-App-Mode", HeaderValue::from_static(APP_MODE));
-    headers.insert("X-Dark-Mode", HeaderValue::from_str(profile.dark_mode.as_deref().unwrap_or("0")).unwrap_or_else(|_| HeaderValue::from_static("0")));
+    headers.insert("X-Sdk-Int", HeaderValue::from_static(ios_protocol::SYSTEM_VERSION));
+    headers.insert("X-Sdk-Locale", HeaderValue::from_static(ios_protocol::SDK_LOCALE));
+    headers.insert("X-App-Id", HeaderValue::from_static(ios_protocol::APP_ID));
+    headers.insert("X-App-Version", HeaderValue::from_static(ios_protocol::APP_VERSION));
+    headers.insert("X-App-Code", HeaderValue::from_static(ios_protocol::APP_CODE));
+    headers.insert("X-Api-Version", HeaderValue::from_static(ios_protocol::API_VERSION));
     let client = http_client_builder().default_headers(headers.clone()).build().map_err(|_| "创建酷安 HTTP 客户端失败".to_string())?;
     let redirect_client = http_client_builder().default_headers(headers).redirect(reqwest::redirect::Policy::none()).build().map_err(|_| "创建酷安重定向客户端失败".to_string())?;
     Ok((client, redirect_client))
@@ -1078,14 +1076,14 @@ fn apple_platform_tls_config() -> Option<rustls::ClientConfig> {
 }
 
 impl CoolapkClient {
-    /// 设备码策略：
-    /// - 未登录（游客态）：每台电脑首次启动随机生成一次并持久化，之后固定
-    /// - 已登录：使用账号绑定的固定设备码（首次登录生成随机并持久化，之后固定）
-    /// 设备码与 Token V3 绑定，切换时 auth 签名同步切换。
+    /// API 读取使用手机版当前采用的 iOS 协议身份；旧 Android 设备码仅为兼容现有设置与非 API 功能保留。
+    /// iOS 匿名 UUID 在应用数据目录持久化，避免每次启动都更换匿名身份。
     pub fn new() -> Self {
         let native_device_profile = super::native_device::detect();
-        let device_code = device_code_with_profile(&generate_random_device_code(), &native_device_profile);
+        let device_code = device_code_with_profile(&generate_default_device_code(), &native_device_profile);
         let (client, redirect_client) = build_api_clients(&native_device_profile).unwrap_or_else(|_| (Client::new(), Client::new()));
+        let ios_device_id = uuid::Uuid::new_v4().to_string().to_uppercase();
+        log::info!("api.protocol_profile name=ios version={} app_code={} device_id_kind=uuid", ios_protocol::APP_VERSION, ios_protocol::APP_CODE);
 
         Self {
             client: RwLock::new(client),
@@ -1096,6 +1094,7 @@ impl CoolapkClient {
             device_profile: RwLock::new(DeviceProfile::default()),
             native_device_profile,
             device_code: RwLock::new(device_code),
+            ios_device_id: RwLock::new(ios_device_id),
         }
     }
 
@@ -1115,11 +1114,10 @@ impl CoolapkClient {
         Ok(())
     }
 
-    /// 获取当前设备码签名（Token V3 与设备码绑定，切换设备码后自动换签名）
+    /// 获取当前 iOS 协议签名。每个请求都使用当前秒级时间戳与稳定设备 UUID。
     fn get_token(&self) -> Result<String, String> {
-        let version_code = self.effective_device_profile().app_code.unwrap_or_else(|| super::native_device::APP_CODE.to_string());
-        self.auth.read().map_err(|_| "failed to lock auth state".to_string())?
-            .get_app_token_for(&version_code)
+        let device_id = self.ios_device_id.read().map_err(|_| "failed to read iOS device identity".to_string())?.clone();
+        Ok(ios_protocol::app_token(&device_id, ios_protocol::current_timestamp_seconds()?))
     }
 
     /// 同步设备码：已登录使用该账号绑定的固定设备码，
@@ -1236,58 +1234,15 @@ impl CoolapkClient {
         code
     }
 
-    /// 将用户自定义设备信息覆盖到请求头（None 字段保留默认值）。
-    /// X-App-Device 由当前生效设备码决定（游客随机/账号固定），此处统一写入。
+    /// 统一应用手机版当前使用的 iOS 协议请求头；设备码和 Android 配置不参与 API 签名。
     fn apply_device_profile(
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::RequestBuilder, String> {
-        let device_code = self
-            .device_code
-            .read()
-            .map_err(|_| "failed to read device code".to_string())?
+        let device_id = self.ios_device_id.read()
+            .map_err(|_| "failed to read iOS device identity".to_string())?
             .clone();
-        self.apply_device_profile_with_code(request, &device_code, true)
-    }
-
-    fn apply_device_profile_with_code(
-        &self,
-        request: reqwest::RequestBuilder,
-        device_code: &str,
-        include_device_model: bool,
-    ) -> Result<reqwest::RequestBuilder, String> {
-        let profile = self.effective_device_profile();
-        let mut request = request;
-        // X-App-Device 由 UUID 设备码 + 固定 iOS 硬件信息派生（与官方 iCoolMarket 一致）。
-        let app_device = build_x_app_device(device_code, &profile, include_device_model);
-        if let Ok(header_value) = HeaderValue::from_str(&app_device) {
-            request = request.header("X-App-Device", header_value);
-        }
-        for (header_name, value) in [
-            ("X-Sdk-Int", profile.sdk_int.as_ref()),
-            ("X-Sdk-Locale", profile.locale.as_ref()),
-            ("X-App-Version", profile.app_version.as_ref()),
-            ("X-App-Code", profile.app_code.as_ref()),
-            ("X-App-Supported", profile.app_code.as_ref()),
-            ("X-Api-Version", profile.api_version.as_ref()),
-            ("X-Dark-Mode", profile.dark_mode.as_ref()),
-        ] {
-            if let Some(value) = value.filter(|s| !s.trim().is_empty()) {
-                if let Ok(header_value) = HeaderValue::from_str(value) {
-                    request = request.header(header_name, header_value);
-                }
-            }
-        }
-        if let Some(ua) = profile.user_agent.as_ref().filter(|s| !s.trim().is_empty()) {
-            if let Ok(header_value) = HeaderValue::from_str(ua) {
-                request = request.header(USER_AGENT, header_value);
-            }
-        }
-        request = request
-            .header("X-App-Id", super::native_device::APP_ID)
-            .header("X-App-Channel", super::native_device::APP_CHANNEL)
-            .header("X-App-Mode", super::native_device::APP_MODE);
-        Ok(request)
+        ios_protocol::apply_headers(request, &device_id)
     }
 
     fn effective_device_profile(&self) -> DeviceProfile {
@@ -1333,6 +1288,11 @@ impl CoolapkClient {
             "code": 200,
             "data": {
                 "loggedIn": logged_in,
+                "apiProtocol": "ios",
+                "apiAppId": ios_protocol::APP_ID,
+                "apiAppVersion": ios_protocol::APP_VERSION,
+                "apiAppCode": ios_protocol::APP_CODE,
+                "apiDeviceIdKind": "persisted-uuid",
                 "deviceCode": code,
                 "deviceId": device_id,
                 "defaultProfile": {
@@ -1363,6 +1323,17 @@ impl CoolapkClient {
         }
 
         let dir = path.parent().map(|p| p.to_path_buf());
+        if let Some(dir) = dir.as_ref() {
+            let identity_path = dir.join("ios_device_id.txt");
+            let existing = std::fs::read_to_string(&identity_path).ok().map(|value| value.trim().to_string())
+                .filter(|value| uuid::Uuid::parse_str(value).is_ok());
+            let identity = existing.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string().to_uppercase());
+            if existing.is_none() {
+                let _ = std::fs::create_dir_all(dir);
+                let _ = std::fs::write(&identity_path, &identity);
+            }
+            if let Ok(mut guard) = self.ios_device_id.write() { *guard = identity; }
+        }
         let accounts_path = dir.as_ref().map(|d| d.join("accounts.json"));
         if let Some(ap) = accounts_path {
             if let Ok(content) = std::fs::read_to_string(&ap) {
@@ -1450,17 +1421,7 @@ impl CoolapkClient {
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::RequestBuilder, String> {
-        let request = request
-            .header("X-App-Token", self.get_token()?)
-            .header("X-Requested-With", "XMLHttpRequest");
         self.apply_device_profile(request)
-    }
-
-    /// 账户库文件路径（与 session_cookie.txt 同目录，统一 JSON 存储）
-    fn accounts_file_path(&self) -> Option<std::path::PathBuf> {
-        let path = self.cookie_file.read().ok()?.clone()?;
-        let dir = path.parent()?.to_path_buf();
-        Some(dir.join("accounts.json"))
     }
 
     /// 读取账户库根对象（{ lastLoginUid, accounts: [...] }）
@@ -1837,21 +1798,16 @@ impl CoolapkClient {
         let started = std::time::Instant::now();
         let log_path = path.split('?').next().unwrap_or(path);
 
-        // 公开内容只读回退使用本机持久化的游客设备码，不携带账号 Cookie。
-        // 这样既能避开登录设备触发的 -415，也不会改变已绑定账号的写操作指纹。
-        let public_device_code = device_code_with_profile(&self.guest_device_code(), &self.effective_device_profile());
-        let public_token = CoolapkAuth::new(public_device_code.clone()).get_app_token()?;
-        let public_app_device = build_x_app_device(&public_device_code, &self.effective_device_profile(), true);
-        let device_header = HeaderValue::from_str(&public_app_device)
-            .map_err(|_| "公开读取设备码格式无效".to_string())?;
+        // 公开内容只读请求使用稳定的 iOS 协议 UUID，不携带账号 Cookie。
+        // 该匿名身份仅用于读接口；写操作仍可能要求服务端登记的 CDID。
         log::debug!("api.guest_request path={} cookie_attached=false", log_path);
-        let response = self
-            .api_client()?
-            .get(format!("{api_origin}{path}"))
-            .header("X-App-Token", public_token)
-            .header("X-App-Device", device_header)
+        let request = self.apply_device_profile(
+            self.api_client()?
+                .get(format!("{api_origin}{path}"))
+                .query(query),
+        )?;
+        let response = request
             .header("X-Requested-With", "XMLHttpRequest")
-            .query(query)
             .send()
             .await
             .map_err(|error| {
@@ -3715,12 +3671,10 @@ impl CoolapkClient {
                 .map_err(|_| "failed to upgrade image URL to HTTPS".to_string())?;
         }
 
-        // 酷安 API 域下的图片接口（如 /v6/message/showImage）需要完整的 App 指纹头
-        // （X-Sdk-Int/X-App-Id/X-App-Version 等）+ Token 认证，必须复用主 client；
-        // 其余 CDN 图片用独立浏览器 UA 客户端（浏览器 UA 访问 image.coolapk.com 会被 CDN 放行）
+        // 酷安 API 图片接口复用主 client 并应用 iOS 协议头；酷安 CDN 图片使用同一 iOS UA，
+        // 其他第三方 CDN 继续使用普通浏览器 UA，且不会携带酷安 Cookie。
         let mut req = if host == "api.coolapk.com" || host == "api2.coolapk.com" {
-            // 私信图片接口与普通 API 一样校验设备码和自定义设备信息，
-            // 不能只带 Token，否则持久缓存改为原生代理加载后会出现空白图片。
+            // 私信图片接口与普通 API 一样校验 iOS 设备标识与 Token。
             let token = self.get_token()?;
             self.apply_device_profile(
                 self.api_client()?
@@ -3739,10 +3693,15 @@ impl CoolapkClient {
             } else {
                 "https://www.coolapk.com/"
             };
+            let user_agent = if is_coolapk_host(&host) {
+                ios_protocol::default_user_agent()
+            } else {
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string()
+            };
             session(url.as_str(), SessionPolicy::Follow)?
                 .get(url)
                 .timeout(std::time::Duration::from_secs(12))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .header(USER_AGENT, user_agent)
                 .header("Referer", referer)
         };
 
@@ -3833,6 +3792,7 @@ impl CoolapkClient {
         let did = self.effective_custom_device_id();
         let ddid = if path == "getPlugin" || path == "savePlugin" { self.effective_custom_ddid() } else { None };
         let cookie = user_plugin_cookie(&cookie, did.as_deref(), ddid.as_deref());
+        let user_agent = ios_protocol::default_user_agent();
         let url = format!("https://m.coolapk.com/mp/userPlugin/{path}");
         let client = session(&url, SessionPolicy::NoRedirect)?;
         let request = match form {
@@ -3890,10 +3850,15 @@ impl CoolapkClient {
         let parsed_url = reqwest::Url::parse(url).map_err(|e| format!("invalid URL: {e}"))?;
         let is_coolapk_target = parsed_url.host_str().map(is_coolapk_host).unwrap_or(false);
 
+        let page_user_agent = if is_coolapk_target {
+            ios_protocol::default_user_agent()
+        } else {
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1".to_string()
+        };
         let mut request = page_client
             .get(url)
             .timeout(std::time::Duration::from_secs(15))
-            .header("User-Agent", MOBILE_UA)
+            .header(USER_AGENT, page_user_agent)
             .header("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8");
 
         // 酷安网页版动态页（www.coolapk.com/feed/xxx）带 X- 系列头时会直接返回 JSON 动态详情
@@ -3902,7 +3867,7 @@ impl CoolapkClient {
         if is_coolapk_target && url.contains("coolapk.com/feed/") {
             request = request
                 .header("X-Requested-With", "XMLHttpRequest")
-                .header("X-App-Id", "com.coolapk.app");
+                .header("X-App-Id", ios_protocol::APP_ID);
         }
 
         let cookie = self
@@ -3970,7 +3935,7 @@ impl CoolapkClient {
             .text("pic", pictures.join(","));
         let response = client.post("https://m.coolapk.com/mp/do?c=feed&m=report")
             .timeout(std::time::Duration::from_secs(30))
-            .header("User-Agent", MOBILE_UA).header("X-Requested-With", "XMLHttpRequest")
+            .header(USER_AGENT, ios_protocol::default_user_agent()).header("X-Requested-With", "XMLHttpRequest")
             .header("Origin", "https://m.coolapk.com").header("Referer", "https://m.coolapk.com/mp/do?c=feed&m=report")
             .header(COOKIE, cookie_without_ddid(&cookie)).multipart(form).send().await.map_err(|e| e.to_string())?;
         if !response.status().is_success() { return Err(format!("举报提交失败：HTTP {}", response.status())); }
@@ -4342,7 +4307,7 @@ impl CoolapkClient {
             .get(parsed_url)
             .timeout(std::time::Duration::from_secs(12))
             .header("Range", format!("bytes=0-{}", HEADER_LIMIT - 1))
-            .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header(USER_AGENT, ios_protocol::default_user_agent())
             .header("Referer", "https://www.coolapk.com/")
             .send()
             .await
@@ -7049,21 +7014,16 @@ impl CoolapkClient {
         self.submit_create_feed_form_with_device(form, failure_prefix, true).await
     }
 
-    fn create_feed_request(&self, form: &[(&str, String)], _include_device_model: bool) -> Result<reqwest::RequestBuilder, String> {
-        // Token V3 与 X-App-Device 必须使用同一份完整设备码及同一版本码。
-        // 可用手机版不通过临时 UUID 或空机型头切换身份，因此发布也复用统一设备配置。
-        let token = self.get_token()?;
-        let request = self.apply_device_profile(
+    fn create_feed_request(&self, form: &[(&str, String)], include_device_model: bool) -> Result<reqwest::RequestBuilder, String> {
+        // The iOS protocol binds the full iOS device profile into X-App-Device/X-App-Token.
+        // The old Android-only option to strip model fields cannot be applied independently.
+        let _ = include_device_model;
+        self.apply_device_profile(
             self.api_client()?
-                .request(
-                    reqwest::Method::POST,
-                    "https://api.coolapk.com/v6/feed/createFeed",
-                )
-                .header("X-App-Token", token)
+                .request(reqwest::Method::POST, "https://api.coolapk.com/v6/feed/createFeed")
                 .header("X-Requested-With", "XMLHttpRequest")
                 .form(form),
-        )?;
-        Ok(request)
+        )
     }
 
     async fn submit_create_feed_form_with_device(&self, form: Vec<(&'static str, String)>, failure_prefix: &str, include_device_model: bool) -> Result<Value, String> {
