@@ -1718,14 +1718,10 @@ impl CoolapkClient {
         let started = std::time::Instant::now();
         let log_path = path.split('?').next().unwrap_or(path);
         let method_name = method.as_str().to_string();
-        let token = self.get_token()?;
         let url = format!("{api_origin}{path}");
-        let requested_with = "XMLHttpRequest";
         let mut request = self.apply_device_profile(
             self.api_client()?
                 .request(method, url)
-                .header("X-App-Token", token)
-                .header("X-Requested-With", requested_with)
                 .query(query),
         )?;
 
@@ -1814,7 +1810,6 @@ impl CoolapkClient {
                 .query(query),
         )?;
         let response = request
-            .header("X-Requested-With", "XMLHttpRequest")
             .send()
             .await
             .map_err(|error| {
@@ -1856,13 +1851,10 @@ impl CoolapkClient {
         path: &str,
         form: reqwest::multipart::Form,
     ) -> Result<Value, String> {
-        let token = self.get_token()?;
         let url = format!("https://api.coolapk.com{path}");
         let mut request = self.apply_device_profile(
             self.api_client()?
                 .request(Method::POST, url)
-                .header("X-App-Token", token)
-                .header("X-Requested-With", "XMLHttpRequest")
                 .multipart(form),
         )?;
 
@@ -2707,8 +2699,6 @@ impl CoolapkClient {
     }
 
     pub async fn get_by_full_url(&self, full_url: &str) -> Result<Value, String> {
-        let token = self.get_token()?;
-
         // 防御性校验：带 App 指纹头 + Token + 登录 Cookie 的请求仅允许发往酷安 API 域
         let parsed = reqwest::Url::parse(full_url).map_err(|e| format!("invalid URL: {e}"))?;
         let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
@@ -2718,9 +2708,7 @@ impl CoolapkClient {
 
         let request = self.apply_device_profile(
             self.api_client()?
-                .get(full_url)
-                .header("X-App-Token", token)
-                .header("X-Requested-With", "XMLHttpRequest"),
+                .get(full_url),
         )?;
         let mut request = request;
         let cookie = self.user_cookie.read().map_err(|_| "failed to read login state".to_string())?.clone();
@@ -2760,8 +2748,11 @@ impl CoolapkClient {
         first_item: &str,
         last_item: &str,
     ) -> Result<Value, String> {
+        // The working mobile client routes the home indexV8 feed through api2.coolapk.com.
         let raw = self
-            .api_get(
+            .request_api_from(
+                "https://api2.coolapk.com",
+                Method::GET,
                 "/v6/main/indexV8",
                 &[
                     ("page", page.to_string()),
@@ -2771,6 +2762,7 @@ impl CoolapkClient {
                     ("lastItem", last_item.to_string()),
                     ("ids", "".to_string()),
                 ],
+                None,
             )
             .await?;
         Ok(json!({ "code": 200, "data": Self::extract_cleaned_list(&raw) }))
@@ -3682,17 +3674,10 @@ impl CoolapkClient {
         // 其他第三方 CDN 继续使用普通浏览器 UA，且不会携带酷安 Cookie。
         let mut req = if host == "api.coolapk.com" || host == "api2.coolapk.com" {
             // 私信图片接口与普通 API 一样校验 iOS 设备标识与 Token。
-            let token = self.get_token()?;
             self.apply_device_profile(
                 self.api_client()?
                     .get(url)
-                    .timeout(std::time::Duration::from_secs(20))
-                    .header(
-                        "Accept",
-                        "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                    )
-                    .header("X-Requested-With", "XMLHttpRequest")
-                    .header("X-App-Token", token),
+                    .timeout(std::time::Duration::from_secs(20)),
             )?
         } else {
             let referer = if is_weibo_image_host(&host) {
@@ -4234,12 +4219,9 @@ impl CoolapkClient {
             .append_pair("id", &format!("{content_type}_{content_id}"));
         let wrapper_url_text = wrapper_url.to_string();
 
-        let token = self.get_token()?;
         let mut request = self.apply_device_profile(
             self.api_redirect_client()?
-                .get(wrapper_url)
-                .header("X-App-Token", token)
-                .header("X-Requested-With", "XMLHttpRequest"),
+                .get(wrapper_url),
         )?;
         let cookie = self
             .user_cookie
@@ -6081,7 +6063,6 @@ impl CoolapkClient {
             return Err("私信内容不能为空".to_string());
         }
 
-        let token = self.get_token()?;
         let mut url = reqwest::Url::parse("https://api.coolapk.com/v6/message/send")
             .map_err(|e| format!("私信接口地址无效: {e}"))?;
         url.query_pairs_mut()
@@ -6095,8 +6076,6 @@ impl CoolapkClient {
         let mut request = self.apply_device_profile(
             self.api_client()?
                 .request(reqwest::Method::POST, url)
-                .header("X-App-Token", token)
-                .header("X-Requested-With", "XMLHttpRequest")
                 .multipart(form),
         )?;
 
@@ -6210,13 +6189,10 @@ impl CoolapkClient {
 
     /// 删除类接口通用实现：POST + query + XMLHttpRequest（与实测成功组合一致）
     async fn delete_action(&self, path: &str, id: &str) -> Result<Value, String> {
-        let token = self.get_token()?;
         let url = format!("https://api.coolapk.com{path}?id={}", id);
         let mut request = self.apply_device_profile(
             self.api_client()?
-                .request(reqwest::Method::POST, url)
-                .header("X-App-Token", token)
-                .header("X-Requested-With", "XMLHttpRequest"),
+                .request(reqwest::Method::POST, url),
         )?;
 
         let cookie = self
@@ -7027,7 +7003,6 @@ impl CoolapkClient {
         self.apply_device_profile(
             self.api_client()?
                 .request(reqwest::Method::POST, "https://api.coolapk.com/v6/feed/createFeed")
-                .header("X-Requested-With", "XMLHttpRequest")
                 .form(form),
         )
     }
