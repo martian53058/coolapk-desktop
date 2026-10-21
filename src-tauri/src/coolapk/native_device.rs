@@ -33,8 +33,8 @@ fn ios_compatibility_profile() -> DeviceProfile {
     DeviceProfile {
         manufacturer: Some("Apple".into()),
         brand: Some("Apple".into()),
-        model: Some(IOS_SALES_MODEL.into()),
-        build: Some(IOS_MODEL.into()),
+        model: Some(IOS_MODEL.into()),
+        build: Some(IOS_HARDWARE_ID.into()),
         sdk_int: Some(IOS_SYSTEM_VERSION.into()),
         user_agent: Some(COMPATIBILITY_UA.into()),
         ..Default::default()
