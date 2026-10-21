@@ -3,6 +3,7 @@
 //! Keep these fields aligned with `IosHeaders.kt` in the supplied c001apk_next source.
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use md5::{Digest, Md5};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use reqwest::RequestBuilder;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -57,19 +58,39 @@ pub fn current_timestamp_seconds() -> Result<u64, String> {
 
 pub fn apply_headers(request: RequestBuilder, device_id: &str) -> Result<RequestBuilder, String> {
     let timestamp = current_timestamp_seconds()?;
-    Ok(request
-        .header("Accept", "*/*")
-        .header("Accept-Language", ACCEPT_LANGUAGE)
-        .header("User-Agent", default_user_agent())
-        .header("X-Requested-With", "XMLHttpRequest")
-        .header("X-Sdk-Int", SYSTEM_VERSION)
-        .header("X-Sdk-Locale", SDK_LOCALE)
-        .header("X-App-Id", APP_ID)
-        .header("X-App-Version", APP_VERSION)
-        .header("X-App-Code", APP_CODE)
-        .header("X-Api-Version", API_VERSION)
-        .header("X-App-Device", app_device(device_id))
-        .header("X-App-Token", app_token(device_id, timestamp)))
+
+    // reqwest::RequestBuilder::header appends values. The client has default
+    // profile headers, and several legacy call sites also add X-App-Token /
+    // X-Requested-With before reaching this function. Build one HeaderMap and
+    // merge it with replacement semantics so the wire request has exactly one
+    // coherent iOS profile (especially one token generated for this device ID).
+    let user_agent = default_user_agent();
+    let device = app_device(device_id);
+    let token = app_token(device_id, timestamp);
+    let mut headers = HeaderMap::new();
+    headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
+    headers.insert("Accept-Language", HeaderValue::from_static(ACCEPT_LANGUAGE));
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_str(&user_agent).map_err(|_| "invalid iOS User-Agent".to_string())?,
+    );
+    headers.insert("X-Requested-With", HeaderValue::from_static("XMLHttpRequest"));
+    headers.insert("X-Sdk-Int", HeaderValue::from_static(SYSTEM_VERSION));
+    headers.insert("X-Sdk-Locale", HeaderValue::from_static(SDK_LOCALE));
+    headers.insert("X-App-Id", HeaderValue::from_static(APP_ID));
+    headers.insert("X-App-Version", HeaderValue::from_static(APP_VERSION));
+    headers.insert("X-App-Code", HeaderValue::from_static(APP_CODE));
+    headers.insert("X-Api-Version", HeaderValue::from_static(API_VERSION));
+    headers.insert(
+        "X-App-Device",
+        HeaderValue::from_str(&device).map_err(|_| "invalid iOS device header".to_string())?,
+    );
+    headers.insert(
+        "X-App-Token",
+        HeaderValue::from_str(&token).map_err(|_| "invalid iOS token header".to_string())?,
+    );
+
+    Ok(request.headers(headers))
 }
 
 fn md5_hex(bytes: &[u8]) -> String {
@@ -103,5 +124,42 @@ mod tests {
         let ua = default_user_agent();
         assert!(ua.contains("+iCoolMarket/16.6.1-2610151"));
         assert!(!ua.contains("-universal"));
+    }
+
+    #[test]
+    fn apply_headers_replaces_duplicate_profile_headers() {
+        let request = reqwest::Client::new()
+            .get("https://api.coolapk.com/v6/main/init")
+            .header("X-App-Token", "stale-token")
+            .header("X-Requested-With", "duplicate")
+            .header("X-App-Id", "com.coolapk.market")
+            .header("Accept-Language", "en-US");
+        let request = apply_headers(request, TEST_ID).unwrap().build().unwrap();
+
+        for name in [
+            "Accept",
+            "Accept-Language",
+            "User-Agent",
+            "X-Requested-With",
+            "X-Sdk-Int",
+            "X-Sdk-Locale",
+            "X-App-Id",
+            "X-App-Version",
+            "X-App-Code",
+            "X-Api-Version",
+            "X-App-Device",
+            "X-App-Token",
+        ] {
+            assert_eq!(
+                request.headers().get_all(name).iter().count(),
+                1,
+                "header {name} must appear exactly once"
+            );
+        }
+        assert_eq!(request.headers()["X-App-Id"], APP_ID);
+        assert_eq!(request.headers()["X-Requested-With"], "XMLHttpRequest");
+        assert_eq!(request.headers()["Accept-Language"], ACCEPT_LANGUAGE);
+        assert_eq!(request.headers()["X-App-Device"], app_device(TEST_ID));
+        assert!(!request.headers()["X-App-Token"].to_str().unwrap().contains("stale-token"));
     }
 }
