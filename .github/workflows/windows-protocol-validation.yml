@@ -1,0 +1,97 @@
+name: Windows 协议修复验证
+
+on:
+  push:
+    branches:
+      - fix/ios-protocol-parity
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-protocol-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    name: Windows x64 测试与构建
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v5
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: 前端类型检查
+        run: npm run typecheck
+
+      - name: 前端单元测试
+        run: npm test
+
+      - name: 构建前端
+        run: npm run build
+
+      - name: Rust 编译检查
+        working-directory: src-tauri
+        run: cargo check
+
+      - name: Rust 单元测试
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: 设置 CI 可移植程序名称
+        shell: pwsh
+        run: |
+          $configPath = "src-tauri/tauri.conf.json"
+          $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+          $config.productName = "coolapk-desktop"
+          $config.build.beforeBuildCommand = ""
+          $config | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $configPath -Encoding utf8
+          if (-not (Test-Path "dist/index.html")) { throw "缺少前端构建产物 dist/index.html" }
+
+      - name: 构建 Windows x64 安装包与 EXE
+        run: npm run tauri -- build --bundles nsis
+
+      - name: 准备 Windows x64 单文件便携版
+        shell: pwsh
+        run: ./scripts/prepare-windows-portable.ps1 -Architecture x64
+
+      - name: 验证构建产物
+        shell: pwsh
+        run: |
+          $portable = Get-ChildItem "src-tauri/target/portable/*.exe" -File
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" -File
+          if (-not $portable -or $portable.Length -le 0) { throw "单文件便携版 EXE 不存在或为空" }
+          if (-not $installer -or $installer.Length -le 0) { throw "NSIS 安装包 EXE 不存在或为空" }
+          Write-Output "Portable EXE: $($portable.FullName) ($($portable.Length) bytes)"
+          Write-Output "Installer EXE: $($installer.FullName) ($($installer.Length) bytes)"
+
+      - name: 上传 Windows EXE 构建产物
+        uses: actions/upload-artifact@v6
+        with:
+          name: coolapk-desktop-windows-x64
+          path: |
+            src-tauri/target/portable/*.exe
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 14
