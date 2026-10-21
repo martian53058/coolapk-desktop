@@ -44,19 +44,30 @@ fn test_publish_device_header_matches_token_identity() {
         user_agent: Some(super::super::native_device::COMPATIBILITY_UA.into()),
         ..Default::default()
     });
-    let original_code = client.device_code.read().unwrap().clone();
-    assert!(is_valid_device_code(&original_code));
+    // The legacy profile remains stored, but API authentication now uses the
+    // independent iOS UUID shared by X-App-Device and X-App-Token.
+    let legacy_code = client.device_code.read().unwrap().clone();
+    assert!(is_valid_device_code(&legacy_code));
+    let ios_device_id = client.ios_device_id.read().unwrap().clone();
+
     let form = build_create_feed_form("正文", None, None);
     let hidden = client.create_feed_request(&form, false).unwrap().build().unwrap();
     let visible = client.create_feed_request(&form, true).unwrap().build().unwrap();
     let hidden_code = hidden.headers()["X-App-Device"].to_str().unwrap();
     let visible_code = visible.headers()["X-App-Device"].to_str().unwrap();
-    assert_eq!(hidden_code, original_code);
-    assert_eq!(visible_code, original_code);
-    assert_eq!(hidden.headers()["X-App-Token"], visible.headers()["X-App-Token"]);
-    assert_eq!(hidden.headers()[USER_AGENT], super::super::native_device::COMPATIBILITY_UA);
+
+    assert_eq!(hidden_code, ios_protocol::app_device(&ios_device_id));
+    assert_eq!(visible_code, hidden_code);
+    assert_eq!(decode_x_app_device_header(hidden_code)[0], ios_device_id);
+    let token = hidden.headers()["X-App-Token"].to_str().unwrap();
+    assert!(token.contains(&ios_device_id));
+    assert!(!token.starts_with("v3"));
+    assert_eq!(
+        hidden.headers()[USER_AGENT].to_str().unwrap(),
+        ios_protocol::default_user_agent()
+    );
     assert_eq!(hidden.body().unwrap().as_bytes(), visible.body().unwrap().as_bytes());
-    assert_eq!(*client.device_code.read().unwrap(), original_code);
+    assert_eq!(*client.device_code.read().unwrap(), legacy_code);
 }
 #[test]
 fn test_publish_extras_apk_fields() {
@@ -1626,13 +1637,28 @@ fn test_device_profile_model_applies_without_custom_device_id() {
         model: Some("SM-S9280".into()), build: Some("actual-build".into()), ..Default::default()
     });
     assert_eq!(client.effective_custom_device_id(), None);
+
+    // The saved legacy profile is still updated for settings compatibility.
     let active = client.device_code.read().unwrap().clone();
     assert!(is_valid_device_code(&active));
-    let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed"))
-        .unwrap().build().unwrap();
-    let header_code = request.headers()["X-App-Device"].to_str().unwrap();
-    assert_eq!(header_code, active);
-    let fields = decode_x_app_device_header(header_code);
-    assert_eq!(&fields[4..8], &["Samsung".to_string(), "samsung".to_string(), "SM-S9280".to_string(), "actual-build".to_string()]);
-}
+    let legacy_fields = decode_x_app_device_header(&active);
+    assert_eq!(
+        &legacy_fields[4..8],
+        &["Samsung".to_string(), "samsung".to_string(), "SM-S9280".to_string(), "actual-build".to_string()]
+    );
 
+    // API traffic intentionally uses the fixed reference iOS identity, not the
+    // Android device profile configured in settings.
+    let ios_device_id = client.ios_device_id.read().unwrap().clone();
+    let request = client.apply_device_profile(
+        client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed")
+    ).unwrap().build().unwrap();
+    let header_code = request.headers()["X-App-Device"].to_str().unwrap();
+    assert_eq!(header_code, ios_protocol::app_device(&ios_device_id));
+    let fields = decode_x_app_device_header(header_code);
+    assert_eq!(fields[0], ios_device_id);
+    assert_eq!(
+        &fields[4..8],
+        &["Apple".to_string(), "Apple".to_string(), "iPhone 16".to_string(), "iPhone17,3/MYEV3CH/A".to_string()]
+    );
+}
