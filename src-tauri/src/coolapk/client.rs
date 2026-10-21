@@ -1040,44 +1040,26 @@ pub(crate) fn base_http_client_builder() -> reqwest::ClientBuilder {
 }
 
 fn build_api_clients(profile: &DeviceProfile) -> Result<(Client, Client), String> {
+    use super::native_device::{APP_CHANNEL, APP_CODE, APP_ID, APP_MODE, APP_VERSION};
+    let app_code = profile.app_code.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(APP_CODE);
+    let app_version = profile.app_version.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or(APP_VERSION);
     let mut headers = HeaderMap::new();
     headers.insert("Accept", HeaderValue::from_static("*/*"));
-    headers.insert(
-        "Accept-Language",
-        HeaderValue::from_static("zh-Hans-HK;q=1.0, zh-Hant-HK;q=0.9, en-HK;q=0.8"),
-    );
+    headers.insert("Accept-Language", HeaderValue::from_static("zh-CN"));
     headers.insert("X-Requested-With", HeaderValue::from_static("XMLHttpRequest"));
-    headers.insert(
-        USER_AGENT,
-        profile.user_agent.as_deref()
-            .and_then(|value| HeaderValue::from_str(value).ok())
-            .unwrap_or_else(|| HeaderValue::from_static(super::native_device::COMPATIBILITY_UA)),
-    );
-    headers.insert(
-        "X-Sdk-Int",
-        profile.sdk_int.as_deref()
-            .and_then(|value| HeaderValue::from_str(value).ok())
-            .unwrap_or_else(|| HeaderValue::from_static("26.7")),
-    );
-    headers.insert(
-        "X-Sdk-Locale",
-        profile.locale.as_deref()
-            .and_then(|value| HeaderValue::from_str(value).ok())
-            .unwrap_or_else(|| HeaderValue::from_static("zh-HK")),
-    );
-    headers.insert("X-App-Id", HeaderValue::from_static("com.coolapk.app"));
-    headers.insert("X-App-Version", HeaderValue::from_static("16.6.1"));
-    headers.insert("X-App-Code", HeaderValue::from_static("2610151"));
-    headers.insert("X-Api-Version", HeaderValue::from_static("16"));
-    let client = http_client_builder()
-        .default_headers(headers.clone())
-        .build()
-        .map_err(|_| "创建酷安 HTTP 客户端失败".to_string())?;
-    let redirect_client = http_client_builder()
-        .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "创建酷安重定向客户端失败".to_string())?;
+    headers.insert(USER_AGENT, profile.user_agent.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static(super::native_device::COMPATIBILITY_UA)));
+    headers.insert("X-Sdk-Int", HeaderValue::from_str(profile.sdk_int.as_deref().unwrap_or(super::native_device::SDK_INT)).unwrap_or_else(|_| HeaderValue::from_static(super::native_device::SDK_INT)));
+    headers.insert("X-Sdk-Locale", HeaderValue::from_str(profile.locale.as_deref().unwrap_or("zh-CN")).unwrap_or_else(|_| HeaderValue::from_static("zh-CN")));
+    headers.insert("X-App-Id", HeaderValue::from_static(APP_ID));
+    headers.insert("X-App-Version", HeaderValue::from_str(app_version).unwrap_or_else(|_| HeaderValue::from_static(APP_VERSION)));
+    headers.insert("X-App-Code", HeaderValue::from_str(app_code).unwrap_or_else(|_| HeaderValue::from_static(APP_CODE)));
+    headers.insert("X-Api-Version", HeaderValue::from_str(profile.api_version.as_deref().unwrap_or("16")).unwrap_or_else(|_| HeaderValue::from_static("16")));
+    headers.insert("X-App-Supported", HeaderValue::from_str(app_code).unwrap_or_else(|_| HeaderValue::from_static(APP_CODE)));
+    headers.insert("X-App-Channel", HeaderValue::from_static(APP_CHANNEL));
+    headers.insert("X-App-Mode", HeaderValue::from_static(APP_MODE));
+    headers.insert("X-Dark-Mode", HeaderValue::from_str(profile.dark_mode.as_deref().unwrap_or("0")).unwrap_or_else(|_| HeaderValue::from_static("0")));
+    let client = http_client_builder().default_headers(headers.clone()).build().map_err(|_| "创建酷安 HTTP 客户端失败".to_string())?;
+    let redirect_client = http_client_builder().default_headers(headers).redirect(reqwest::redirect::Policy::none()).build().map_err(|_| "创建酷安重定向客户端失败".to_string())?;
     Ok((client, redirect_client))
 }
 
@@ -1135,10 +1117,9 @@ impl CoolapkClient {
 
     /// 获取当前设备码签名（Token V3 与设备码绑定，切换设备码后自动换签名）
     fn get_token(&self) -> Result<String, String> {
-        self.auth
-            .read()
-            .map_err(|_| "failed to lock auth state".to_string())?
-            .get_app_token()
+        let version_code = self.effective_device_profile().app_code.unwrap_or_else(|| super::native_device::APP_CODE.to_string());
+        self.auth.read().map_err(|_| "failed to lock auth state".to_string())?
+            .get_app_token_for(&version_code)
     }
 
     /// 同步设备码：已登录使用该账号绑定的固定设备码，
@@ -1247,9 +1228,9 @@ impl CoolapkClient {
             .and_then(|v| v.as_str())
             .filter(|c| is_valid_device_code(c))
         {
-            return code.to_string();
+            return device_code_with_profile(code, &self.effective_device_profile());
         }
-        let code = generate_random_device_code();
+        let code = device_code_with_profile(&generate_random_device_code(), &self.effective_device_profile());
         root["guestDeviceCode"] = json!(code.clone());
         self.save_accounts_root(&root);
         code
@@ -1287,7 +1268,9 @@ impl CoolapkClient {
             ("X-Sdk-Locale", profile.locale.as_ref()),
             ("X-App-Version", profile.app_version.as_ref()),
             ("X-App-Code", profile.app_code.as_ref()),
+            ("X-App-Supported", profile.app_code.as_ref()),
             ("X-Api-Version", profile.api_version.as_ref()),
+            ("X-Dark-Mode", profile.dark_mode.as_ref()),
         ] {
             if let Some(value) = value.filter(|s| !s.trim().is_empty()) {
                 if let Ok(header_value) = HeaderValue::from_str(value) {
@@ -1300,6 +1283,10 @@ impl CoolapkClient {
                 request = request.header(USER_AGENT, header_value);
             }
         }
+        request = request
+            .header("X-App-Id", super::native_device::APP_ID)
+            .header("X-App-Channel", super::native_device::APP_CHANNEL)
+            .header("X-App-Mode", super::native_device::APP_MODE);
         Ok(request)
     }
 
@@ -8844,148 +8831,67 @@ impl CoolapkClient {
     }
 }
 
-/// 新版 iOS 设备身份是 UUID（访客态随机生成、账号态固定保存）。
-/// 不再把 X-App-Device 的反向 Base64 请求头误当成设备身份本身。
-fn is_valid_device_code(code: &str) -> bool {
-    let trimmed = code.trim();
-    let bytes = trimmed.as_bytes();
-    bytes.len() == 36
-        && bytes[8] == b'-'
-        && bytes[13] == b'-'
-        && bytes[18] == b'-'
-        && bytes[23] == b'-'
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            matches!(index, 8 | 13 | 18 | 23)
-                || byte.is_ascii_hexdigit()
-        })
+/// Decode the reverse-Base64 device fingerprint used by c001apk_next.
+fn decode_device_code(code: &str) -> Option<Vec<String>> {
+    if code.is_empty() || code.len() > 2048 || code.chars().any(char::is_whitespace) { return None; }
+    let reversed: String = code.chars().rev().collect();
+    let padded = format!("{}{}", reversed, "=".repeat((4 - reversed.len() % 4) % 4));
+    let bytes = BASE64.decode(padded.as_bytes()).ok()?;
+    let decoded = String::from_utf8(bytes).ok()?;
+    let fields: Vec<String> = decoded.split(';').map(str::to_string).collect();
+    (fields.len() >= 8 && !fields[0].trim().is_empty()).then_some(fields)
+}
+fn is_valid_device_code(code: &str) -> bool { decode_device_code(code).is_some() }
+fn encode_device_code(fields: &[String]) -> String {
+    let encoded = BASE64.encode(fields.join(";").as_bytes());
+    encoded.chars().rev().filter(|character| *character != '=').collect()
 }
 
-/// 新版（iOS 伪装）设备码即 UUID 大写字符串，直接作为身份标识；
-/// X-App-Device 由 [`build_x_app_device`] 派生。此函数保留以兼容旧调用方。
-fn device_code_without_model(code: &str) -> Result<String, String> {
-    if !is_valid_device_code(code) {
-        return Err("设备身份必须为有效 UUID".to_string());
-    }
-    Ok(normalize_device_uuid(code))
+/// Preserve the reference fingerprint's szlmId/MAC/tail; only the four device-display fields change.
+fn device_code_with_profile(code: &str, profile: &DeviceProfile) -> String {
+    use super::native_device::{BRAND, BUILD_NUMBER, DEFAULT_DEVICE_CODE, MANUFACTURER, MODEL};
+    let mut fields = decode_device_code(code).or_else(|| decode_device_code(DEFAULT_DEVICE_CODE)).unwrap_or_default();
+    if fields.len() < 8 { return DEFAULT_DEVICE_CODE.to_string(); }
+    let manufacturer = profile.manufacturer.as_deref().filter(|v| !v.trim().is_empty()).unwrap_or(MANUFACTURER);
+    let brand = profile.brand.as_deref().filter(|v| !v.trim().is_empty()).unwrap_or(BRAND);
+    let model = profile.model.as_deref().filter(|v| !v.trim().is_empty()).unwrap_or(MODEL);
+    let build = profile.build.as_deref().filter(|v| !v.trim().is_empty()).unwrap_or(BUILD_NUMBER);
+    fields[4] = format!(" {manufacturer}");
+    fields[5] = format!(" {brand}");
+    fields[6] = format!(" {model}");
+    fields[7] = format!(" {build}");
+    encode_device_code(&fields)
 }
 
-/// 新版设备码是 UUID，无需再注入机型信息；此函数仅做格式规范化，保留以兼容旧调用方。
-fn device_code_with_profile(code: &str, _profile: &DeviceProfile) -> String {
-    normalize_device_uuid(code)
-}
-
-/// 将旧的 Base64 设备码或任意输入规范化为新的 UUID 大写格式。
-/// 已经是合法 UUID 的原样返回；否则基于输入派生一个稳定 UUID。
+/// Compatibility wrapper: old UUID/invalid values migrate to the reference fingerprint.
 fn normalize_device_uuid(code: &str) -> String {
-    let trimmed = code.trim();
-    if trimmed.len() == 36
-        && trimmed.chars().nth(8) == Some('-')
-        && trimmed.chars().nth(13) == Some('-')
-        && trimmed.chars().nth(18) == Some('-')
-        && trimmed.chars().nth(23) == Some('-')
-        && trimmed.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-    {
-        return trimmed.to_uppercase();
-    }
-    // 旧设备码（Base64 反转格式）无法直接转为 UUID，基于其内容派生一个稳定 UUID。
-    use md5::{Digest, Md5};
-    let mut hasher = Md5::new();
-    hasher.update(trimmed.as_bytes());
-    let digest = hasher.finalize();
-    let hex = hex::encode(digest);
-    format!(
-        "{}-{}-4{}-{}{}-{}",
-        &hex[0..8], &hex[8..12], &hex[13..16],
-        match u8::from_str_radix(&hex[16..18], 16).unwrap_or(0) & 0x3 | 0x8 {
-            v => format!("{v:02x}"),
-        },
-        &hex[18..20], &hex[20..32],
-    )
-    .to_uppercase()
+    if is_valid_device_code(code) { code.to_string() }
+    else { super::native_device::DEFAULT_DEVICE_CODE.to_string() }
 }
-
-fn generate_device_code_with_device_id(
-    device_id: &str,
-    _model: Option<&str>,
-    _build: Option<&str>,
-) -> String {
-    normalize_device_uuid(device_id)
+fn device_code_without_model(code: &str) -> Result<String, String> {
+    if !is_valid_device_code(code) { return Err("设备码格式无效".to_string()); }
+    Ok(code.to_string())
 }
-
-/// 账号设备码：由 UID 派生稳定 UUID。
-fn generate_device_code_for_id(uid: &str) -> String {
-    normalize_device_uuid(uid)
+fn generate_device_code_with_device_id(device_id: &str, model: Option<&str>, build: Option<&str>) -> String {
+    use super::native_device::{BRAND, BUILD_NUMBER, DEFAULT_DEVICE_CODE, MANUFACTURER, MODEL};
+    let mut fields = decode_device_code(DEFAULT_DEVICE_CODE).unwrap_or_default();
+    if fields.len() < 8 { return DEFAULT_DEVICE_CODE.to_string(); }
+    let id = device_id.trim();
+    if !id.is_empty() && !id.contains(';') && !id.chars().any(char::is_control) { fields[0] = id.to_string(); }
+    fields[4] = format!(" {MANUFACTURER}");
+    fields[5] = format!(" {BRAND}");
+    fields[6] = format!(" {}", model.filter(|v| !v.trim().is_empty()).unwrap_or(MODEL));
+    fields[7] = format!(" {}", build.filter(|v| !v.trim().is_empty()).unwrap_or(BUILD_NUMBER));
+    encode_device_code(&fields)
 }
-
-/// 将 iOS 客户端的 8 段设备身份编码为 X-App-Device：
-/// Base64(设备ID; ; ; ; Apple; Apple; 机型; 硬件ID/销售型号)，反转并去掉开头的 Base64 padding。
-fn encode_x_app_device(
-    device_id: &str,
-    model: &str,
-    hardware_id: &str,
-    sales_model: &str,
-    include_device_model: bool,
-) -> String {
-    let plain = if include_device_model {
-        let identity = if sales_model.trim().is_empty() {
-            hardware_id.to_string()
-        } else {
-            format!("{hardware_id}/{sales_model}")
-        };
-        format!("{device_id}; ; ; ; Apple; Apple; {model}; {identity}")
-    } else {
-        format!("{device_id}; ; ; ; ; ; ; ")
-    };
-    let encoded = BASE64.encode(plain.as_bytes());
-    encoded.chars().rev().collect::<String>().trim_start_matches('=').to_string()
+/// Account identity uses the reference fingerprint instead of inventing a new anti-risk identity from UID.
+fn generate_device_code_for_id(_uid: &str) -> String { super::native_device::DEFAULT_DEVICE_CODE.to_string() }
+/// X-App-Device is the full reference-format device code and must match Token V3 input.
+pub(crate) fn build_x_app_device(device_code: &str, profile: &DeviceProfile, _include_device_model: bool) -> String {
+    device_code_with_profile(device_code, profile)
 }
-
-/// 使用当前设备档案生成 X-App-Device；设备 ID 与签名材料保持一致。
-pub(crate) fn build_x_app_device(
-    device_id: &str,
-    profile: &DeviceProfile,
-    include_device_model: bool,
-) -> String {
-    use super::native_device::{IOS_HARDWARE_ID, IOS_MODEL, IOS_SALES_MODEL};
-    let model = profile.model.as_deref().filter(|value| !value.trim().is_empty()).unwrap_or(IOS_MODEL);
-    let hardware_id = profile.build.as_deref().filter(|value| !value.trim().is_empty()).unwrap_or(IOS_HARDWARE_ID);
-    encode_x_app_device(device_id, model, hardware_id, IOS_SALES_MODEL, include_device_model)
-}
-
-/// 生成随机设备码（UUID v4 大写格式，与 iOS 客户端 idfv 一致）。
-fn generate_random_device_code() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use md5::{Digest, Md5};
-
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let mut seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    seed ^= COUNTER
-        .fetch_add(1, Ordering::Relaxed)
-        .wrapping_mul(0x9E3779B97F4A7C15);
-    seed ^= std::process::id() as u64;
-
-    let mut hasher = Md5::new();
-    hasher.update(seed.to_string().as_bytes());
-    let digest = hasher.finalize();
-    // 构造 UUID v4 风格的大写字符串：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-    let hex = hex::encode(digest);
-    format!(
-        "{}-{}-4{}-{}{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[13..16],
-        // variant 位固定为 8/9/a/b
-        match u8::from_str_radix(&hex[16..18], 16).unwrap_or(0) & 0x3 | 0x8 {
-            v => format!("{v:02x}"),
-        },
-        &hex[18..20],
-        &hex[20..32],
-    )
-    .to_uppercase()
-}
+/// Keep the official device code stable rather than generating a random fingerprint.
+fn generate_random_device_code() -> String { super::native_device::DEFAULT_DEVICE_CODE.to_string() }
 
 fn value_to_string(value: &Value) -> String {
     value
