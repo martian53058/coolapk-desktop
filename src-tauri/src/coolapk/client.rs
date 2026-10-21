@@ -1,6 +1,6 @@
 use super::http_session::{session, Policy as SessionPolicy};
 use super::ios_protocol;
-use crate::coolapk::auth::{CoolapkAuth, DEFAULT_APP_CODE};
+use crate::coolapk::auth::CoolapkAuth;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::header::{COOKIE, HeaderMap, HeaderValue, LOCATION, USER_AGENT};
 use reqwest::{Client, Method};
@@ -1080,7 +1080,7 @@ impl CoolapkClient {
     /// iOS 匿名 UUID 在应用数据目录持久化，避免每次启动都更换匿名身份。
     pub fn new() -> Self {
         let native_device_profile = super::native_device::detect();
-        let device_code = device_code_with_profile(&generate_default_device_code(), &native_device_profile);
+        let device_code = device_code_with_profile(&generate_random_device_code(), &native_device_profile);
         let (client, redirect_client) = build_api_clients(&native_device_profile).unwrap_or_else(|_| (Client::new(), Client::new()));
         let ios_device_id = uuid::Uuid::new_v4().to_string().to_uppercase();
         log::info!("api.protocol_profile name=ios version={} app_code={} device_id_kind=uuid", ios_protocol::APP_VERSION, ios_protocol::APP_CODE);
@@ -1422,6 +1422,13 @@ impl CoolapkClient {
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::RequestBuilder, String> {
         self.apply_device_profile(request)
+    }
+
+    /// 账户库文件路径（与 session_cookie.txt 同目录，统一 JSON 存储）
+    fn accounts_file_path(&self) -> Option<std::path::PathBuf> {
+        let path = self.cookie_file.read().ok()?.clone()?;
+        let dir = path.parent()?.to_path_buf();
+        Some(dir.join("accounts.json"))
     }
 
     /// 读取账户库根对象（{ lastLoginUid, accounts: [...] }）
@@ -3792,7 +3799,6 @@ impl CoolapkClient {
         let did = self.effective_custom_device_id();
         let ddid = if path == "getPlugin" || path == "savePlugin" { self.effective_custom_ddid() } else { None };
         let cookie = user_plugin_cookie(&cookie, did.as_deref(), ddid.as_deref());
-        let user_agent = ios_protocol::default_user_agent();
         let url = format!("https://m.coolapk.com/mp/userPlugin/{path}");
         let client = session(&url, SessionPolicy::NoRedirect)?;
         let request = match form {
