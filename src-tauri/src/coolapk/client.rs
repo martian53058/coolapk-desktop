@@ -2734,7 +2734,13 @@ impl CoolapkClient {
     // 1. 首页推荐
     pub async fn get_index_v8_feeds(&self, page: u32) -> Result<Value, String> {
         let raw = self
-            .api_get("/v6/main/indexV8", &[("page", page.to_string())])
+            .request_api_from(
+                "https://api2.coolapk.com",
+                Method::GET,
+                "/v6/main/indexV8",
+                &[("page", page.to_string())],
+                None,
+            )
             .await?;
         Ok(json!({ "code": 200, "data": Self::extract_cleaned_list(&raw) }))
     }
@@ -2777,7 +2783,9 @@ impl CoolapkClient {
         last_item: &str,
     ) -> Result<Value, String> {
         let raw = self
-            .api_get(
+            .request_api_from(
+                "https://api2.coolapk.com",
+                Method::GET,
                 "/v6/main/indexV8",
                 &[
                     ("page", page.to_string()),
@@ -2787,6 +2795,7 @@ impl CoolapkClient {
                     ("lastItem", last_item.to_string()),
                     ("ids", "".to_string()),
                 ],
+                None,
             )
             .await?;
         let response = wrap_api_data(raw)?;
