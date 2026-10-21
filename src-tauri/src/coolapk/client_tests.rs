@@ -13,19 +13,18 @@ fn decode_x_app_device_header(value: &str) -> Vec<String> {
 }
 
 #[test]
-fn test_x_app_device_matches_reference_golden_vector() {
-    assert_eq!(
-        encode_x_app_device(
-            "A1B2C3D4-E5F6-4789-8ABC-DEF012345678",
-            "iPhone 15",
-            "iPhone15,4",
-            "MTLD3CH/A",
-            true,
-        ),
-        "E0LIN0MExEVN9CNsUTMl52boBVagsTNxASZu9GaQlGI7UGbwBXQgsTZsBHcBByOgsDI7AyO4cjN1QzMyEDMGVERtMkQBhTL5gzN00iNGVTRtQDRzMkMCFTQ"
-    );
+fn test_x_app_device_matches_reference_fingerprint() {
+    let profile = super::super::native_device::detect();
+    let code = build_x_app_device(super::super::native_device::DEFAULT_DEVICE_CODE, &profile, true);
+    assert_eq!(code, super::super::native_device::DEFAULT_DEVICE_CODE);
+    assert!(is_valid_device_code(&code));
+    let fields = decode_x_app_device_header(&code);
+    assert!(fields.len() >= 9);
+    assert_eq!(fields[4], "OnePlus");
+    assert_eq!(fields[5], "OnePlus");
+    assert_eq!(fields[6], "PJZ110");
+    assert_eq!(fields[7], "PJZ110_16.0.5.703(CN01)");
 }
-
 #[test]
 fn test_feed_cleaning_preserves_private_visibility() {
     for raw in [
@@ -41,45 +40,30 @@ fn test_feed_cleaning_preserves_private_visibility() {
 }
 
 #[test]
-fn test_publish_device_model_is_scoped_and_preserves_identity() {
+fn test_publish_device_header_matches_token_identity() {
     let client = CoolapkClient::new();
     client.update_device_profile(DeviceProfile {
         device_id: Some("publish-identity".into()),
-        manufacturer: Some("Apple".into()),
-        brand: Some("Apple".into()),
-        model: Some("iPhone 16".into()),
-        build: Some("iPhone17,3".into()),
-        user_agent: Some("native-UA iPhone16".into()),
+        manufacturer: Some("OnePlus".into()),
+        brand: Some("OnePlus".into()),
+        model: Some("PJZ110".into()),
+        build: Some("PJZ110_16.0.5.703(CN01)".into()),
+        user_agent: Some(super::super::native_device::COMPATIBILITY_UA.into()),
         ..Default::default()
     });
     let original_code = client.device_code.read().unwrap().clone();
     assert!(is_valid_device_code(&original_code));
-
     let form = build_create_feed_form("正文", None, None);
     let hidden = client.create_feed_request(&form, false).unwrap().build().unwrap();
     let visible = client.create_feed_request(&form, true).unwrap().build().unwrap();
-    let hidden_fields = decode_x_app_device_header(hidden.headers()["X-App-Device"].to_str().unwrap());
-    let visible_fields = decode_x_app_device_header(visible.headers()["X-App-Device"].to_str().unwrap());
-
-    assert_eq!(hidden_fields.len(), 8);
-    assert_eq!(visible_fields.len(), 8);
-    assert_eq!(hidden_fields[0], original_code);
-    assert!(hidden_fields[1..].iter().all(String::is_empty));
-    assert_eq!(visible_fields[0], original_code);
-    assert_eq!(&visible_fields[1..4], &["".to_string(), "".to_string(), "".to_string()]);
-    assert_eq!(visible_fields[4], "Apple");
-    assert_eq!(visible_fields[5], "Apple");
-    assert_eq!(visible_fields[6], "iPhone 16");
-    assert_eq!(visible_fields[7], "iPhone17,3/MYEV3CH/A");
-
-    assert_eq!(hidden.headers()[USER_AGENT], "+iCoolMarket/16.6.1-2610151");
-    assert_eq!(visible.headers()[USER_AGENT], "native-UA iPhone16");
-    assert_eq!(hidden.headers().get_all(USER_AGENT).iter().count(), 1);
+    let hidden_code = hidden.headers()["X-App-Device"].to_str().unwrap();
+    let visible_code = visible.headers()["X-App-Device"].to_str().unwrap();
+    assert_eq!(hidden_code, original_code);
+    assert_eq!(visible_code, original_code);
+    assert_eq!(hidden.headers()["X-App-Token"], visible.headers()["X-App-Token"]);
+    assert_eq!(hidden.headers()[USER_AGENT], super::super::native_device::COMPATIBILITY_UA);
     assert_eq!(hidden.body().unwrap().as_bytes(), visible.body().unwrap().as_bytes());
     assert_eq!(*client.device_code.read().unwrap(), original_code);
-    assert!(device_code_without_model("invalid").is_err());
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    assert!(!client.default_publish_device_model());
 }
 #[test]
 fn test_publish_extras_apk_fields() {
@@ -781,13 +765,14 @@ fn test_user_entity_rows_preserve_unknown_templates() {
 
 /// 随机设备码：每次调用生成不同结果（游客态/新账号首次生成随机并持久化）
 #[test]
-fn test_device_code_is_random() {
+fn test_device_code_uses_reference_fingerprint_not_random_identity() {
     let a = generate_random_device_code();
     let b = generate_random_device_code();
-    assert_ne!(a, b, "两次生成的设备码不应相同");
-    assert_eq!(a.len(), 36, "iOS 设备身份应为 UUID 格式");
-    assert!(is_valid_device_code(&a), "生成的设备身份必须符合 UUID 格式");
-    assert!(HeaderValue::from_str(&a).is_ok(), "设备身份必须是合法 HTTP header 值");
+    assert_eq!(a, b, "默认设备码应保持官方认可的稳定指纹");
+    assert_eq!(a, super::super::native_device::DEFAULT_DEVICE_CODE);
+    assert!(is_valid_device_code(&a));
+    assert!(HeaderValue::from_str(&a).is_ok());
+    assert_eq!(decode_x_app_device_header(&a)[4], "OnePlus");
 }
 #[test]
 fn test_account_cookie_requires_real_sessid() {
@@ -1090,26 +1075,24 @@ fn test_parse_reply_user_agent_android_rom_fallback_is_not_duplicated() {
 #[test]
 fn test_user_agent_device_profile_headers_for_publish_request() {
     let client = CoolapkClient::new();
-    let ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; iPhone17,3; iPhone 16; iOS_26.7) +iCoolMarket/16.6.1-2610151";
+    let ua = super::super::native_device::COMPATIBILITY_UA;
     client.update_device_profile(DeviceProfile {
         user_agent: Some(ua.into()),
-        manufacturer: Some("Apple".into()),
-        brand: Some("Apple".into()),
-        model: Some("iPhone 16".into()),
-        build: Some("iPhone17,3".into()),
+        manufacturer: Some("OnePlus".into()),
+        brand: Some("OnePlus".into()),
+        model: Some("PJZ110".into()),
+        build: Some("PJZ110_16.0.5.703(CN01)".into()),
         ..Default::default()
     });
     let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed"))
         .unwrap().build().unwrap();
     assert_eq!(request.headers().get(USER_AGENT).unwrap().to_str().unwrap(), ua);
     let code = request.headers().get("X-App-Device").unwrap().to_str().unwrap();
-    let fields = decode_x_app_device_header(code);
-    assert_eq!(fields[0], client.device_code.read().unwrap().as_str());
-    assert_eq!(&fields[4..8], &[
-        "Apple".to_string(), "Apple".to_string(), "iPhone 16".to_string(),
-        "iPhone17,3/MYEV3CH/A".to_string()
-    ]);
-    assert_ne!(code, client.device_code.read().unwrap().as_str());
+    assert_eq!(code, client.device_code.read().unwrap().as_str());
+    assert_eq!(decode_x_app_device_header(code)[6], "PJZ110");
+    assert_eq!(request.headers()["X-App-Id"], "com.coolapk.market");
+    assert_eq!(request.headers()["X-App-Code"], "2607021");
+    assert_eq!(request.headers()["X-App-Supported"], "2607021");
 }
 #[tokio::test]
 async fn test_login_cookie_persistence_flow() {
@@ -1651,35 +1634,38 @@ async fn test_live_oss_and_reply() {
 #[test]
 fn test_generate_device_code_with_device_id() {
     let custom_id = "DU-MOCK-TEST-DEVICE-ID-99999999";
-    let code = generate_device_code_with_device_id(custom_id, Some("iPhone 16"), Some("iPhone17,3"));
+    let code = generate_device_code_with_device_id(custom_id, Some("PJZ110"), Some("custom-build"));
     assert!(is_valid_device_code(&code));
-    assert_eq!(code, normalize_device_uuid(custom_id));
+    let fields = decode_x_app_device_header(&code);
+    assert_eq!(fields[0], custom_id);
+    assert_eq!(fields[6], "PJZ110");
+    assert_eq!(fields[7], "custom-build");
     assert_eq!(code, generate_device_code_with_device_id(custom_id, None, None));
 }
 #[test]
 fn test_update_device_profile_with_device_id() {
     let client = CoolapkClient::new();
     let custom_id = "DU-MOCK-TEST-DEVICE-ID-99999999";
-
     client.update_device_profile(DeviceProfile {
         device_id: Some(custom_id.to_string()),
-        model: Some("iPhone 16".to_string()),
-        build: Some("iPhone17,3".to_string()),
+        model: Some("Test Model".to_string()),
+        build: Some("test-build".to_string()),
         ..Default::default()
     });
-
     assert_eq!(client.effective_custom_device_id(), Some(custom_id.to_string()));
     let info = client.get_device_info().expect("get_device_info");
     assert_eq!(info["data"]["deviceId"].as_str(), Some(custom_id));
-
     let active_code = client.device_code.read().unwrap().clone();
     assert!(is_valid_device_code(&active_code));
-    assert_eq!(active_code, normalize_device_uuid(custom_id));
+    let fields = decode_x_app_device_header(&active_code);
+    assert_eq!(fields[0], custom_id);
+    assert_eq!(fields[6], "Test Model");
+    assert_eq!(fields[7], "test-build");
 }
 #[test]
 fn test_device_profile_preserves_identity_and_updates_all_model_fields() {
-    let raw = "stable-id; ; ; ; Xiaomi; Xiaomi; old-model; old-build; stable-oaid";
-    let legacy_code: String = BASE64.encode(raw).chars().rev().filter(|c| *c != '=').collect();
+    let base = super::super::native_device::DEFAULT_DEVICE_CODE;
+    let before = decode_device_code(base).unwrap();
     let profile = DeviceProfile {
         manufacturer: Some("Samsung".into()),
         brand: Some("samsung".into()),
@@ -1687,74 +1673,52 @@ fn test_device_profile_preserves_identity_and_updates_all_model_fields() {
         build: Some("actual-build".into()),
         ..Default::default()
     };
-    let normalized = normalize_device_uuid(&legacy_code);
-    assert!(is_valid_device_code(&normalized));
-    assert_eq!(device_code_with_profile(&legacy_code, &profile), normalized);
-    assert_eq!(device_code_with_profile(&legacy_code, &DeviceProfile::default()), normalized);
-    assert_eq!(device_code_with_profile("invalid", &profile), normalize_device_uuid("invalid"));
+    let updated = device_code_with_profile(base, &profile);
+    let after = decode_device_code(&updated).unwrap();
+    assert_eq!(&before[0..4], &after[0..4], "szlmId/MAC prefix must be preserved");
+    assert_eq!(&before[8..], &after[8..], "reference fingerprint tail must be preserved");
+    assert_eq!(&after[4..8], &[" Samsung".to_string(), " samsung".to_string(), " SM-S9280".to_string(), " actual-build".to_string()]);
+    assert_eq!(device_code_with_profile("invalid", &DeviceProfile::default()), super::super::native_device::DEFAULT_DEVICE_CODE);
 }
 #[test]
 fn test_device_profile_model_applies_without_custom_device_id() {
     let client = CoolapkClient::new();
     client.update_device_profile(DeviceProfile {
-        manufacturer: Some("Samsung".into()),
-        brand: Some("samsung".into()),
-        model: Some("SM-S9280".into()),
-        build: Some("actual-build".into()),
-        ..Default::default()
+        manufacturer: Some("Samsung".into()), brand: Some("samsung".into()),
+        model: Some("SM-S9280".into()), build: Some("actual-build".into()), ..Default::default()
     });
     assert_eq!(client.effective_custom_device_id(), None);
     let active = client.device_code.read().unwrap().clone();
     assert!(is_valid_device_code(&active));
-
     let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed"))
         .unwrap().build().unwrap();
-    let fields = decode_x_app_device_header(request.headers()["X-App-Device"].to_str().unwrap());
-    assert_eq!(fields[0], active);
-    assert_eq!(&fields[4..8], &[
-        "Apple".to_string(), "Apple".to_string(), "SM-S9280".to_string(),
-        "actual-build/MYEV3CH/A".to_string()
-    ]);
+    let header_code = request.headers()["X-App-Device"].to_str().unwrap();
+    assert_eq!(header_code, active);
+    let fields = decode_x_app_device_header(header_code);
+    assert_eq!(&fields[4..8], &["Samsung".to_string(), "samsung".to_string(), "SM-S9280".to_string(), "actual-build".to_string()]);
 }
 #[test]
 fn test_native_device_profile_survives_settings_sync_and_custom_reset() {
-    let mut client = CoolapkClient::new();
-    let native_ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; iPhone17,3; iPhone 16; iOS_26.7) +iCoolMarket/16.6.1-2610151";
-    client.native_device_profile = DeviceProfile {
-        manufacturer: Some("Apple".into()),
-        brand: Some("Apple".into()),
-        model: Some("iPhone 16".into()),
-        build: Some("iPhone17,3".into()),
-        user_agent: Some(native_ua.into()),
-        ..Default::default()
-    };
-    let verify = |expected_ua: &str, expected_model: &str, expected_hardware: &str| {
-        let request = client.apply_device_profile(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed"))
-            .unwrap().build().unwrap();
-        assert_eq!(request.headers().get(USER_AGENT).unwrap().to_str().unwrap(), expected_ua);
-        let fields = decode_x_app_device_header(request.headers()["X-App-Device"].to_str().unwrap());
-        assert_eq!(fields[0], client.device_code.read().unwrap().as_str());
-        assert_eq!(&fields[4..8], &[
-            "Apple".to_string(), "Apple".to_string(), expected_model.to_string(),
-            expected_hardware.to_string()
-        ]);
-    };
-
+    let client = CoolapkClient::new();
     client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
-    verify(native_ua, "iPhone 16", "iPhone17,3/MYEV3CH/A");
+    let first = client.device_code.read().unwrap().clone();
+    assert!(is_valid_device_code(&first));
+    assert_eq!(decode_x_app_device_header(&first)[0], "saved-device-id");
     assert_eq!(client.get_device_info().unwrap()["data"]["defaultProfile"]["source"], "native");
 
     client.update_device_profile(DeviceProfile {
         device_id: Some("saved-device-id".into()),
-        manufacturer: Some("Xiaomi".into()),
-        brand: Some("Redmi".into()),
-        model: Some("24117RK2CC".into()),
-        build: Some("custom-build".into()),
-        user_agent: Some("custom-user-agent".into()),
-        ..Default::default()
+        manufacturer: Some("Xiaomi".into()), brand: Some("Redmi".into()),
+        model: Some("24117RK2CC".into()), build: Some("custom-build".into()),
+        user_agent: Some("custom-user-agent".into()), ..Default::default()
     });
-    verify("custom-user-agent", "24117RK2CC", "custom-build/MYEV3CH/A");
+    let customized = client.device_code.read().unwrap().clone();
+    let fields = decode_x_app_device_header(&customized);
+    assert_eq!(fields[0], "saved-device-id");
+    assert_eq!(&fields[4..8], &["Xiaomi".to_string(), "Redmi".to_string(), "24117RK2CC".to_string(), "custom-build".to_string()]);
+    assert_eq!(client.api_client().unwrap().post("https://api.coolapk.com/v6/feed/createFeed").header("X-App-Token", client.get_token().unwrap()).build().unwrap().headers()["X-App-Id"], "com.coolapk.market");
 
     client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
-    verify(native_ua, "iPhone 16", "iPhone17,3/MYEV3CH/A");
+    let reset = client.device_code.read().unwrap().clone();
+    assert_eq!(decode_x_app_device_header(&reset)[6], "PJZ110");
 }
