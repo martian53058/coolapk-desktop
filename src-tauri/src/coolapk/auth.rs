@@ -72,4 +72,13 @@ mod tests {
         assert!(first.contains("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
         assert!(first.contains("0x"));
     }
+    #[test]
+    fn token_matches_reference_ios_golden_vector() {
+        let auth = CoolapkAuth::new("A1B2C3D4-E5F6-4789-8ABC-DEF012345678");
+        assert_eq!(
+            auth.generate_token_at(1_700_000_000),
+            "6ff6898e9469e3fe8ce07b390f0e523bA1B2C3D4-E5F6-4789-8ABC-DEF0123456780x6553f100"
+        );
+    }
+
 }
