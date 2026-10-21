@@ -5,13 +5,13 @@
 use super::client::DeviceProfile;
 
 /// 默认使用的 iPhone 硬件组合（随机池中的一项，固定以保证设备码持久稳定）。
-pub const IOS_MODEL: &str = "iPhone17,3";
-pub const IOS_HARDWARE_ID: &str = "MYEV3CH/A";
-pub const IOS_SALES_MODEL: &str = "iPhone 16";
+pub const IOS_MODEL: &str = "iPhone 16";
+pub const IOS_HARDWARE_ID: &str = "iPhone17,3";
+pub const IOS_SALES_MODEL: &str = "MYEV3CH/A";
 pub const IOS_SYSTEM_VERSION: &str = "26.7";
 
 /// 官方 iCoolMarket UA 模板。
-pub const COMPATIBILITY_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; MYEV3CH/A; iPhone17,3; iOS_26.7) +iCoolMarket/16.6.1-2610151";
+pub const COMPATIBILITY_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; iPhone17,3; iPhone 16; iOS_26.7) +iCoolMarket/16.6.1-2610151";
 
 #[cfg(target_os = "android")]
 pub fn detect() -> DeviceProfile {
