@@ -1640,7 +1640,12 @@ fn test_generate_device_code_with_device_id() {
     assert_eq!(fields[0], custom_id);
     assert_eq!(fields[6], "PJZ110");
     assert_eq!(fields[7], "custom-build");
-    assert_eq!(code, generate_device_code_with_device_id(custom_id, None, None));
+    let default_model_code = generate_device_code_with_device_id(custom_id, None, None);
+    let default_fields = decode_x_app_device_header(&default_model_code);
+    assert_eq!(default_fields[0], custom_id);
+    assert_eq!(default_fields[6], "PJZ110");
+    assert_eq!(default_fields[7], "PJZ110_16.0.5.703(CN01)");
+    assert_ne!(code, default_model_code, "不同的机型构建字段应生成不同的完整设备串");
 }
 #[test]
 fn test_update_device_profile_with_device_id() {
