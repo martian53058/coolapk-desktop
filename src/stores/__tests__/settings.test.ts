@@ -291,6 +291,8 @@ describe('settings store', () => {
     fileStoreState.values.set('theme', 'dark');
     const store = useSettingsStore();
     await store.initializeSettings();
+    // 初始文件持久化已从首屏关键路径移至后台；需要验证写盘结果时显式等待队列。
+    await store.flushSettings();
     expect(store.settings.desktopCommentsOnRight).toBe(false);
     expect(store.settings.theme).toBe('dark');
     expect(fileStoreState.values.get('desktopCommentsOnRight')).toBe(false);

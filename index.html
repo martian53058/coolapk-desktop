@@ -7,12 +7,71 @@
     <title>酷安</title>
     <style>
       html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
         -webkit-text-size-adjust: 100%;
         text-size-adjust: 100%;
+        background: #f5f7f8;
+        color: #62666d;
+      }
+      @media (prefers-color-scheme: dark) {
+        html, body {
+          background: #0e1012;
+          color: #b2b6bc;
+        }
+      }
+      #startup-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: grid;
+        place-items: center;
+        background: var(--background, #f5f7f8);
+        color: var(--text-secondary, #62666d);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .startup-splash-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+      .startup-splash-mark {
+        display: grid;
+        place-items: center;
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        background: #10b768;
+        color: #fff;
+        font-size: 27px;
+        font-weight: 700;
+        box-shadow: 0 6px 20px rgba(16, 183, 104, .2);
+      }
+      .startup-splash-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(128, 128, 128, .22);
+        border-top-color: var(--brand-primary, #10b768);
+        border-radius: 50%;
+        animation: startup-spin .8s linear infinite;
+      }
+      @keyframes startup-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .startup-splash-spinner { animation-duration: 1.8s; }
       }
     </style>
   </head>
   <body>
+    <div id="startup-splash" role="status" aria-live="polite">
+      <div class="startup-splash-content">
+        <div class="startup-splash-mark" aria-hidden="true">酷</div>
+        <div>正在启动酷安…</div>
+        <div class="startup-splash-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
