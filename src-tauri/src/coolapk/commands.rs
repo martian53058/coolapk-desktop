@@ -61,8 +61,7 @@ impl LoginVerification {
     }
 }
 
-/// iOS 官方页面可能在原 URL 内完成短信登录，不依赖网页是否发生跳转。
-#[cfg(any(target_os = "ios", test))]
+/// 官方登录页面可能在原 URL 内完成登录，不依赖网页是否发生跳转。
 fn should_poll_ios_login_cookies(url: &reqwest::Url) -> bool {
     if url.scheme() != "https" { return false; }
     match url.host_str() {
@@ -3960,10 +3959,9 @@ pub async fn open_login_webview(app: tauri::AppHandle) -> Result<(), String> {
             }
             let on_landing = url.scheme() == "https"
                 && matches!(url.host_str(), Some("www.coolapk.com" | "m.coolapk.com" | "coolapk.com"));
-            #[cfg(target_os = "ios")]
+            // 所有平台都在登录页持续轮询 Cookie：WebView2 的 Cookie 写入和 URL 跳转
+            // 之间存在竞态，单靠 /auth/callback 跳转时机经常错过，导致登录后不自动同步。
             let ios_cookie_poll = callback.is_some() || should_poll_ios_login_cookies(&url);
-            #[cfg(not(target_os = "ios"))]
-            let ios_cookie_poll = false;
             // iOS 等待会话写入期间持续轮询，账号校验由会话指纹和失败后的冷却时间限频。
             if (callback.is_some() || on_landing || ios_cookie_poll) && (attempts < 4 || ios_cookie_poll)
                 && last_attempt.is_none_or(|at| at.elapsed() >= Duration::from_secs(2))

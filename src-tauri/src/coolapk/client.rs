@@ -1,5 +1,6 @@
 use super::http_session::{session, Policy as SessionPolicy};
 use crate::coolapk::auth::CoolapkAuth;
+use crate::coolapk::ios_identity::{self, IosDevice};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::header::{COOKIE, HeaderMap, HeaderValue, LOCATION, USER_AGENT};
 use reqwest::{Client, Method};
@@ -1040,18 +1041,32 @@ pub(crate) fn base_http_client_builder() -> reqwest::ClientBuilder {
 }
 
 fn build_api_clients(profile: &DeviceProfile) -> Result<(Client, Client), String> {
+    use super::ios_identity;
+    // 默认静态头：与 iOS 客户端 `IosHeaders.headers()` 对齐。
+    // X-App-Device / X-App-Token 每次请求动态生成（token 带秒级时间戳），
+    // 在 `apply_device_profile_with_code` 里逐请求注入。
+    let ios_device = IosDevice {
+        id: String::new(),
+        model: profile.model.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "iPhone 16".to_string()),
+        hardware_id: "iPhone17,3".to_string(),
+        sales_model: "MYEV3CH/A".to_string(),
+        system_version: profile.sdk_int.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "26.7".to_string()),
+    };
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, profile.user_agent.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static(super::native_device::COMPATIBILITY_UA)));
-    headers.insert("X-Sdk-Int", profile.sdk_int.as_deref().and_then(|value| HeaderValue::from_str(value).ok()).unwrap_or_else(|| HeaderValue::from_static("26.7")));
-    headers.insert("X-Sdk-Locale", HeaderValue::from_static("zh-HK"));
-    headers.insert("X-App-Mode", HeaderValue::from_static("universal"));
-    headers.insert("X-App-Channel", HeaderValue::from_static("coolapk"));
-    headers.insert("X-App-Id", HeaderValue::from_static("com.coolapk.app"));
-    headers.insert("X-App-Version", HeaderValue::from_static("16.6.1"));
-    headers.insert("X-App-Code", HeaderValue::from_static("2610151"));
-    headers.insert("X-Api-Version", HeaderValue::from_static("16"));
-    headers.insert("X-App-Supported", HeaderValue::from_static("2610151"));
-    headers.insert("X-Dark-Mode", HeaderValue::from_static("0"));
+    headers.insert("Accept", HeaderValue::from_static("*/*"));
+    headers.insert("Accept-Language", HeaderValue::from_static(ios_identity::ACCEPT_LANGUAGE));
+    if let Ok(ua) = HeaderValue::from_str(&ios_identity::user_agent(&ios_device)) {
+        headers.insert(USER_AGENT, ua);
+    } else if let Some(ua) = profile.user_agent.as_deref().and_then(|v| HeaderValue::from_str(v).ok()) {
+        headers.insert(USER_AGENT, ua);
+    }
+    headers.insert("X-Requested-With", HeaderValue::from_static("XMLHttpRequest"));
+    if let Ok(v) = HeaderValue::from_str(&ios_device.system_version) { headers.insert("X-Sdk-Int", v); }
+    headers.insert("X-Sdk-Locale", HeaderValue::from_static(ios_identity::SDK_LOCALE));
+    headers.insert("X-App-Id", HeaderValue::from_static(ios_identity::BUNDLE_ID));
+    headers.insert("X-App-Version", HeaderValue::from_static(ios_identity::APP_VERSION));
+    headers.insert("X-App-Code", HeaderValue::from_static(ios_identity::APP_CODE));
+    headers.insert("X-Api-Version", HeaderValue::from_static(ios_identity::API_VERSION));
     let client = http_client_builder().default_headers(headers.clone()).build().map_err(|_| "创建酷安 HTTP 客户端失败".to_string())?;
     let redirect_client = http_client_builder().default_headers(headers).redirect(reqwest::redirect::Policy::none()).build().map_err(|_| "创建酷安重定向客户端失败".to_string())?;
     Ok((client, redirect_client))
@@ -1072,13 +1087,13 @@ fn apple_platform_tls_config() -> Option<rustls::ClientConfig> {
 }
 
 impl CoolapkClient {
-    /// 设备码策略：
-    /// - 未登录（游客态）：每台电脑首次启动随机生成一次并持久化，之后固定
-    /// - 已登录：使用账号绑定的固定设备码（首次登录生成随机并持久化，之后固定）
-    /// 设备码与 Token V3 绑定，切换时 auth 签名同步切换。
+    /// 设备 ID 策略：
+    /// - 未登录（游客态）：每台电脑首次启动随机生成一次 UUID 并持久化，之后固定
+    /// - 已登录：使用账号绑定的固定设备 ID（首次登录生成随机 UUID 并持久化，之后固定）
+    /// iOS 身份下设备 ID 就是原始 UUID，X-App-Device 在请求时实时计算。
     pub fn new() -> Self {
         let native_device_profile = super::native_device::detect();
-        let device_code = device_code_with_profile(&generate_random_device_code(), &native_device_profile);
+        let device_code = generate_random_device_code();
         let (client, redirect_client) = build_api_clients(&native_device_profile).unwrap_or_else(|_| (Client::new(), Client::new()));
 
         Self {
@@ -1117,9 +1132,9 @@ impl CoolapkClient {
             .get_app_token()
     }
 
-    /// 同步设备码：已登录使用该账号绑定的固定设备码，
-    /// 未登录使用本机持久化的游客设备码（每台电脑首次生成后固定）。
-    /// 两者都会持久化，重启后保持不变。
+    /// 同步设备 ID：已登录使用该账号绑定的固定设备 ID，
+    /// 未登录使用本机持久化的游客设备 ID（每台电脑首次生成后固定）。
+    /// iOS 身份下 device_code 就是原始 UUID/CDID，X-App-Device 在请求时实时计算。
     pub fn sync_device_code(&self) {
         let uid = self.current_uid();
         let code = if let Some(uid) = uid {
@@ -1127,8 +1142,6 @@ impl CoolapkClient {
         } else {
             self.guest_device_code()
         };
-        // 保留账号/游客设备标识，只覆盖机型部分；无数盟 ID 时也必须生效。
-        let code = device_code_with_profile(&code, &self.effective_device_profile());
         if let Ok(mut auth) = self.auth.write() {
             auth.set_device_code(code.clone());
         }
@@ -1174,20 +1187,23 @@ impl CoolapkClient {
     }
 
     /// 账号绑定的固定设备码：
-    /// 若用户在设置中配置了数盟设备 ID，则优先按该设备 ID 生成标准设备码；
-    /// 否则使用 UID 派生算法保持向后兼容。
+    /// 账号绑定的固定设备 ID：
+    /// 若用户在设置中配置了数盟设备 ID，则优先使用该 ID；
+    /// 否则首次为该账号生成一个随机 UUID 并持久化到账户库。
+    /// iOS 身份下设备 ID 就是原始 UUID/CDID，X-App-Device 在请求时实时计算。
     fn account_device_code(&self, uid: &str) -> String {
         let mut accounts = self.load_accounts();
         let custom_id = self.effective_custom_device_id();
         let code = if let Some(ref dev_id) = custom_id {
-            let (model, build) = if let Ok(guard) = self.device_profile.read() {
-                (guard.model.clone(), guard.build.clone())
-            } else {
-                (None, None)
-            };
-            generate_device_code_with_device_id(dev_id, model.as_deref(), build.as_deref())
+            dev_id.clone()
         } else {
-            generate_device_code_for_id(uid)
+            // 从账户库里读已保存的 deviceCode；没有就生成一个新 UUID。
+            accounts
+                .iter()
+                .position(|a| a.get("uid").and_then(|v| v.as_str()) == Some(uid))
+                .and_then(|pos| accounts[pos].get("deviceCode").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                .filter(|s| is_valid_device_code(s))
+                .unwrap_or_else(generate_random_device_code)
         };
         if let Some(pos) = accounts
             .iter()
@@ -1201,21 +1217,14 @@ impl CoolapkClient {
             }
             self.save_accounts(&accounts);
         }
-        // 账户不存在时不写入占位条目：设备码由 uid 确定性推导，无需落盘；
-        // 而空凭据条目会污染账户库，让“已保存账户”出现无法登录的幽灵账号。
         code
     }
 
-    /// 游客设备码：配置了数盟设备 ID 时优先使用，未配置时首次随机生成并持久化
+    /// 游客设备 ID：配置了自定义设备 ID 时优先使用，未配置时首次随机生成并持久化
     fn guest_device_code(&self) -> String {
         let custom_id = self.effective_custom_device_id();
         if let Some(ref dev_id) = custom_id {
-            let (model, build) = if let Ok(guard) = self.device_profile.read() {
-                (guard.model.clone(), guard.build.clone())
-            } else {
-                (None, None)
-            };
-            return generate_device_code_with_device_id(dev_id, model.as_deref(), build.as_deref());
+            return dev_id.clone();
         }
         let mut root = self.load_accounts_root();
         if let Some(code) = root
@@ -1250,37 +1259,33 @@ impl CoolapkClient {
         request: reqwest::RequestBuilder,
         device_code: &str,
     ) -> Result<reqwest::RequestBuilder, String> {
+        // iOS 身份：device_code 是原始设备 ID（UUID 或 CDID），
+        // X-App-Device 由「设备 ID + 固定 iPhone 机型档案」实时算出。
         let profile = self.effective_device_profile();
+        let ios = IosDevice {
+            id: device_code.to_string(),
+            model: profile.model.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "iPhone 16".to_string()),
+            hardware_id: "iPhone17,3".to_string(),
+            sales_model: "MYEV3CH/A".to_string(),
+            system_version: profile.sdk_int.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "26.7".to_string()),
+        };
+        let app_device = ios_identity::app_device_header(&ios);
         let mut request = request;
-        // X-App-Device 由 UUID 设备码 + 固定 iOS 硬件信息派生（与官方 iCoolMarket 一致）。
-        let app_device = build_x_app_device(device_code);
+        // 将 UA 与当前生效的设备档案一起逐请求生成。仅依赖 Client 默认头会在
+        // 设置页修改机型后留下旧 UA，而且 RequestBuilder::build() 本身不展开默认头。
+        if let Ok(ua) = HeaderValue::from_str(&ios_identity::user_agent(&ios)) {
+            request = request.header(USER_AGENT, ua);
+        }
         if let Ok(header_value) = HeaderValue::from_str(&app_device) {
             request = request.header("X-App-Device", header_value);
         }
-        for (header_name, value) in [
-            ("X-Sdk-Int", profile.sdk_int.as_ref()),
-            ("X-Sdk-Locale", profile.locale.as_ref()),
-            ("X-App-Version", profile.app_version.as_ref()),
-            ("X-App-Code", profile.app_code.as_ref()),
-            ("X-Api-Version", profile.api_version.as_ref()),
-            ("X-Dark-Mode", profile.dark_mode.as_ref()),
-        ] {
-            if let Some(value) = value.filter(|s| !s.trim().is_empty()) {
-                if let Ok(header_value) = HeaderValue::from_str(value) {
-                    request = request.header(header_name, header_value);
-                }
-            }
+        // X-Sdk-Int 跟随机型档案里的 iOS 版本；其余 Android 专有头
+        // （X-App-Mode / X-App-Channel / X-App-Supported / X-Dark-Mode）在 iOS
+        // 身份下不再发送，与 c001apk 的 IosHeaders.headers() 保持一致。
+        if let Ok(v) = HeaderValue::from_str(&ios.system_version) {
+            request = request.header("X-Sdk-Int", v);
         }
-        if let Some(app_code) = profile.app_code.as_ref().filter(|s| !s.trim().is_empty()) {
-            if let Ok(header_value) = HeaderValue::from_str(app_code) {
-                request = request.header("X-App-Supported", header_value);
-            }
-        }
-        if let Some(ua) = profile.user_agent.as_ref().filter(|s| !s.trim().is_empty()) {
-            if let Ok(header_value) = HeaderValue::from_str(ua) {
-                request = request.header(USER_AGENT, header_value);
-            }
-        }
+        // 不使用 native_device_profile 中旧的 Android UA，避免 iOS App-Id + Android UA 的矛盾指纹。
         Ok(request)
     }
 
@@ -1440,23 +1445,16 @@ impl CoolapkClient {
     }
 
     /// 为酷安下载请求补齐官方客户端使用的公共请求头。
+    /// iOS 身份：静态头（X-App-Id/Version/Code 等）已在 HTTP client 的 default_headers
+    /// 里统一设置；这里只补动态的 X-App-Token 和 X-Requested-With，再交回
+    /// apply_device_profile 写入 X-App-Device。
     pub fn apply_download_headers(
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::RequestBuilder, String> {
         let request = request
             .header("X-App-Token", self.get_token()?)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("X-Sdk-Int", "26.7")
-            .header("X-Sdk-Locale", "zh-HK")
-            .header("X-App-Mode", "universal")
-            .header("X-App-Channel", "coolapk")
-            .header("X-App-Id", "com.coolapk.app")
-            .header("X-App-Version", "16.6.1")
-            .header("X-App-Code", "2610151")
-            .header("X-Api-Version", "16")
-            .header("X-App-Supported", "2610151")
-            .header("X-Dark-Mode", "0");
+            .header("X-Requested-With", "XMLHttpRequest");
         self.apply_device_profile(request)
     }
 
@@ -1841,12 +1839,20 @@ impl CoolapkClient {
         let started = std::time::Instant::now();
         let log_path = path.split('?').next().unwrap_or(path);
 
-        // 公开内容只读回退使用本机持久化的游客设备码，不携带账号 Cookie。
-        // 这样既能避开登录设备触发的 -415，也不会改变已绑定账号的写操作指纹。
-        let public_device_code = device_code_with_profile(&self.guest_device_code(), &self.effective_device_profile());
-        let public_token = CoolapkAuth::new(public_device_code.clone()).get_app_token()?;
-        let public_app_device = build_x_app_device(&public_device_code);
-        let device_header = HeaderValue::from_str(&public_app_device)
+        // 公开内容只读回退使用本机持久化的游客设备 ID（UUID），不携带账号 Cookie。
+        // iOS 身份：直接用原始 UUID 算 token 和 X-App-Device，不再做 Android 设备串转换。
+        let public_id = self.guest_device_code();
+        let profile = self.effective_device_profile();
+        let ios = IosDevice {
+            id: public_id.clone(),
+            model: profile.clone().model.unwrap_or_else(|| "iPhone 16".to_string()),
+            hardware_id: "iPhone17,3".to_string(),
+            sales_model: "MYEV3CH/A".to_string(),
+            system_version: profile.sdk_int.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "26.7".to_string()),
+        };
+        let now = ios_identity::now_secs();
+        let public_token = ios_identity::app_token(&ios, now);
+        let device_header = HeaderValue::from_str(&ios_identity::app_device_header(&ios))
             .map_err(|_| "公开读取设备码格式无效".to_string())?;
         log::debug!("api.guest_request path={} cookie_attached=false", log_path);
         let response = self
@@ -3838,7 +3844,7 @@ impl CoolapkClient {
         // APK UserAgentHandler 经 C2304 添加 (#Build; ...) 后追加 CoolMarket 版本。
         // 缺少 Build 段时，服务端会将该页面判为普通移动浏览器并拒绝访问。
         let response = request.timeout(std::time::Duration::from_secs(20)).query(query)
-            .header(USER_AGENT, "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; MYEV3CH/A; iPhone17,3; iOS_26.7) +iCoolMarket/16.6.1-2610151")
+            .header(USER_AGENT, "Mozilla/5.0 (Linux; Android 14; wv) AppleWebKit/537.36 Version/4.0 Chrome/130.0.0.0 Mobile Safari/537.36 (#Build; nubia; NX789J; AQ3A.250226.002; Android) +CoolMarket/16.6.2-2609151-universal")
             .header("X-Requested-With", "XMLHttpRequest")
             .header("Referer", "https://m.coolapk.com/mp/userPlugin/myPlugin?autoTheme=1")
             .header("Origin", "https://m.coolapk.com")
@@ -7045,9 +7051,10 @@ impl CoolapkClient {
         self.submit_create_feed_form_with_device(form, failure_prefix, true).await
     }
 
-    fn create_feed_request(&self, form: &[(&str, String)], include_device_model: bool) -> Result<reqwest::RequestBuilder, String> {
+    fn create_feed_request(&self, form: &[(&str, String)], _include_device_model: bool) -> Result<reqwest::RequestBuilder, String> {
+        // iOS 身份：device_code 是原始 UUID，X-App-Device 由 apply_device_profile_with_code
+        // 实时根据「UUID + 固定 iPhone 机型档案」算出，不再需要剥离机型。
         let code = self.device_code.read().map_err(|_| "failed to read device code")?.clone();
-        let code = if include_device_model { code } else { device_code_without_model(&code)? };
         // 发布时单独签名，不能改动共享登录指纹或影响并发请求。
         let token = CoolapkAuth::new(code.clone()).get_app_token()?;
         let request = self.apply_device_profile_with_code(
@@ -7061,14 +7068,7 @@ impl CoolapkClient {
                 .form(form),
             &code,
         )?;
-        if include_device_model { return Ok(request); }
-        let profile = self.effective_device_profile();
-        // 覆盖默认 UA 和自定义 UA，避免从 #Build 或 Dalvik 片段重新识别机型。
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_str(&format!("+iCoolMarket/{}-{}",
-            profile.app_version.as_deref().unwrap_or("16.6.1"),
-            profile.app_code.as_deref().unwrap_or("2610151"))).map_err(|_| "发布 UA 格式无效")?);
-        Ok(request.headers(headers))
+        Ok(request)
     }
 
     async fn submit_create_feed_form_with_device(&self, form: Vec<(&'static str, String)>, failure_prefix: &str, include_device_model: bool) -> Result<Value, String> {
@@ -8830,59 +8830,24 @@ impl CoolapkClient {
 
 /// 检查设备码是否符合官方结构（Base64 逆序解码后包含设备信息字段分号分隔符）
 fn is_valid_device_code(code: &str) -> bool {
-    if code.is_empty() {
-        return false;
-    }
-    let mut rev: String = code.chars().rev().collect();
-    let pad = (4 - (rev.len() % 4)) % 4;
-    rev.push_str(&"=".repeat(pad));
-    if let Ok(bytes) = BASE64.decode(rev.as_bytes()) {
-        if let Ok(s) = std::str::from_utf8(&bytes) {
-            return s.contains("; ");
-        }
-    }
-    false
+    // iOS 身份：设备 ID 必须是 36 位 UUID（8-4-4-4-12，未登录）或
+    // 48 字符 D 开头的 CDID（登录后）。旧版 Android 反转 base64 串没有连字符、
+    // 长度也不对，会被判定为无效并自动重新生成 UUID。
+    let is_uuid = code.len() == 36 && code.chars().filter(|c| *c == '-').count() == 4
+        && code.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    let is_cdid = code.len() == 48 && code.starts_with('D')
+        && code.chars().all(|c| c.is_ascii_alphanumeric());
+    is_uuid || is_cdid
 }
 
-/// 新版（iOS 伪装）设备码即 UUID 大写字符串，直接作为身份标识；
-/// X-App-Device 由 [`build_x_app_device`] 派生。此函数保留以兼容旧调用方。
+/// iOS 身份下设备 ID 就是原始 UUID/CDID，不再做 Android 反转 base64 编码。
+/// 这些旧函数保留为 passthrough 以兼容历史测试，生产代码已不再调用。
 fn device_code_without_model(code: &str) -> Result<String, String> {
-    Ok(normalize_device_uuid(code))
+    Ok(code.to_string())
 }
 
-/// 新版设备码是 UUID，无需再注入机型信息；此函数仅做格式规范化，保留以兼容旧调用方。
 fn device_code_with_profile(code: &str, _profile: &DeviceProfile) -> String {
-    normalize_device_uuid(code)
-}
-
-/// 将旧的 Base64 设备码或任意输入规范化为新的 UUID 大写格式。
-/// 已经是合法 UUID 的原样返回；否则基于输入派生一个稳定 UUID。
-fn normalize_device_uuid(code: &str) -> String {
-    let trimmed = code.trim();
-    if trimmed.len() == 36
-        && trimmed.chars().nth(8) == Some('-')
-        && trimmed.chars().nth(13) == Some('-')
-        && trimmed.chars().nth(18) == Some('-')
-        && trimmed.chars().nth(23) == Some('-')
-        && trimmed.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-    {
-        return trimmed.to_uppercase();
-    }
-    // 旧设备码（Base64 反转格式）无法直接转为 UUID，基于其内容派生一个稳定 UUID。
-    use md5::{Digest, Md5};
-    let mut hasher = Md5::new();
-    hasher.update(trimmed.as_bytes());
-    let digest = hasher.finalize();
-    let hex = hex::encode(digest);
-    format!(
-        "{}-{}-4{}-{}{}-{}",
-        &hex[0..8], &hex[8..12], &hex[13..16],
-        match u8::from_str_radix(&hex[16..18], 16).unwrap_or(0) & 0x3 | 0x8 {
-            v => format!("{v:02x}"),
-        },
-        &hex[18..20], &hex[20..32],
-    )
-    .to_uppercase()
+    code.to_string()
 }
 
 fn generate_device_code_with_device_id(
@@ -8890,57 +8855,28 @@ fn generate_device_code_with_device_id(
     _model: Option<&str>,
     _build: Option<&str>,
 ) -> String {
-    normalize_device_uuid(device_id)
+    device_id.to_string()
 }
 
-/// 账号设备码：由 UID 派生稳定 UUID。
 fn generate_device_code_for_id(uid: &str) -> String {
-    normalize_device_uuid(uid)
-}
-
-/// 计算新版 iOS 伪装方案的 X-App-Device：
-/// `reverse( Base64(device_id + "; " + hardware_id + "/" + sales_model) )`，去掉 `=`。
-/// 与 c001apk-next V1.0.8 中 `f0.f.a()` 一致。
-pub(crate) fn build_x_app_device(device_id: &str) -> String {
-    use super::native_device::{IOS_HARDWARE_ID, IOS_SALES_MODEL};
-    let joined = format!("{device_id}; {IOS_HARDWARE_ID}/{IOS_SALES_MODEL}");
-    let b64 = BASE64.encode(joined.as_bytes());
-    b64.chars().rev().filter(|c| *c != '=').collect()
-}
-
-/// 生成随机设备码（UUID v4 大写格式，与 iOS 客户端 idfv 一致）。
-fn generate_random_device_code() -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    // 账号设备 ID：从 UID 确定性派生一个大写 UUID 风格字符串，保证同一 UID 多次启动稳定。
     use md5::{Digest, Md5};
-
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let mut seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    seed ^= COUNTER
-        .fetch_add(1, Ordering::Relaxed)
-        .wrapping_mul(0x9E3779B97F4A7C15);
-    seed ^= std::process::id() as u64;
-
-    let mut hasher = Md5::new();
-    hasher.update(seed.to_string().as_bytes());
-    let digest = hasher.finalize();
-    // 构造 UUID v4 风格的大写字符串：xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-    let hex = hex::encode(digest);
+    let mut h = Md5::new();
+    h.update(format!("ios-identity:{uid}").as_bytes());
+    let d = h.finalize();
     format!(
-        "{}-{}-4{}-{}{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[13..16],
-        // variant 位固定为 8/9/a/b
-        match u8::from_str_radix(&hex[16..18], 16).unwrap_or(0) & 0x3 | 0x8 {
-            v => format!("{v:02x}"),
-        },
-        &hex[18..20],
-        &hex[20..32],
+        "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+        d[0], d[1], d[2], d[3],
+        d[4], d[5],
+        0x40 | (d[6] & 0x0F), d[7],
+        0x80 | (d[8] & 0x3F), d[9],
+        d[10], d[11], d[12], d[13], d[14], d[15],
     )
-    .to_uppercase()
+}
+
+/// 生成随机设备 ID（iOS 身份：大写 UUID v4）。
+pub(crate) fn generate_random_device_code() -> String {
+    super::ios_identity::random_uuid()
 }
 
 fn value_to_string(value: &Value) -> String {
