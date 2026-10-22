@@ -55,10 +55,10 @@ fn test_publish_device_model_is_scoped_and_preserves_identity() {
     let visible_fields = decode_ios_device_header(&visible);
     assert_eq!(hidden_fields, visible_fields);
     assert_eq!(hidden_fields[0], "publish-identity");
-    assert!(hidden_fields[1..5].iter().all(String::is_empty));
-    assert_eq!(&hidden_fields[5..7], &["Apple".to_string(), "Apple".to_string()]);
-    assert_eq!(hidden_fields[7], "iPhone17,3");
-    assert_eq!(hidden_fields[8], "iPhone17,3/MYEV3CH/A");
+    assert!(hidden_fields[1..4].iter().all(String::is_empty));
+    assert_eq!(&hidden_fields[4..6], &["Apple".to_string(), "Apple".to_string()]);
+    assert_eq!(hidden_fields[6], "iPhone17,3");
+    assert_eq!(hidden_fields[7], "iPhone17,3/MYEV3CH/A");
 
     assert_ios_user_agent(&hidden);
     assert_ios_user_agent(&visible);
@@ -1096,10 +1096,10 @@ fn test_user_agent_device_profile_headers_for_publish_request() {
     assert_ne!(request.headers()[USER_AGENT], android_ua);
     let fields = decode_ios_device_header(&request);
     assert_eq!(fields[0], client.device_code.read().unwrap().as_str());
-    assert!(fields[1..5].iter().all(String::is_empty));
-    assert_eq!(&fields[5..7], &["Apple".to_string(), "Apple".to_string()]);
-    assert_eq!(fields[7], "2210132C");
-    assert_eq!(fields[8], "iPhone17,3/MYEV3CH/A");
+    assert!(fields[1..4].iter().all(String::is_empty));
+    assert_eq!(&fields[4..6], &["Apple".to_string(), "Apple".to_string()]);
+    assert_eq!(fields[6], "2210132C");
+    assert_eq!(fields[7], "iPhone17,3/MYEV3CH/A");
 }
 
 /// 模拟「登录 → 保存 Cookie → 落盘 JSON → 重启恢复 → 登出」完整链路（不依赖网络）
@@ -1701,10 +1701,10 @@ fn test_device_profile_model_applies_without_custom_device_id() {
     ).unwrap().build().unwrap();
     let fields = decode_ios_device_header(&request);
     assert_eq!(fields[0], active);
-    assert!(fields[1..5].iter().all(String::is_empty));
-    assert_eq!(&fields[5..7], &["Apple".to_string(), "Apple".to_string()]);
-    assert_eq!(fields[7], "SM-S9280");
-    assert_eq!(fields[8], "iPhone17,3/MYEV3CH/A");
+    assert!(fields[1..4].iter().all(String::is_empty));
+    assert_eq!(&fields[4..6], &["Apple".to_string(), "Apple".to_string()]);
+    assert_eq!(fields[6], "SM-S9280");
+    assert_eq!(fields[7], "iPhone17,3/MYEV3CH/A");
 }
 
 #[test]
@@ -1726,10 +1726,10 @@ fn test_native_device_profile_survives_settings_sync_and_custom_reset() {
         assert_ne!(request.headers()[USER_AGENT], "custom-user-agent");
         let fields = decode_ios_device_header(&request);
         assert_eq!(fields[0], "saved-device-id");
-        assert!(fields[1..5].iter().all(String::is_empty));
-        assert_eq!(&fields[5..7], &["Apple".to_string(), "Apple".to_string()]);
-        assert_eq!(fields[7], expected_model);
-        assert_eq!(fields[8], "iPhone17,3/MYEV3CH/A");
+        assert!(fields[1..4].iter().all(String::is_empty));
+        assert_eq!(&fields[4..6], &["Apple".to_string(), "Apple".to_string()]);
+        assert_eq!(fields[6], expected_model);
+        assert_eq!(fields[7], "iPhone17,3/MYEV3CH/A");
     };
 
     client.update_device_profile(DeviceProfile { device_id: Some("saved-device-id".into()), ..Default::default() });
