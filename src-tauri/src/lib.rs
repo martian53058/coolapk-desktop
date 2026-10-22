@@ -553,6 +553,24 @@ fn set_window_theme(app: tauri::AppHandle, theme: Option<String>) -> Result<(), 
     Ok(())
 }
 
+/// 前端 HTML 已准备好静态启动页后才显示桌面窗口，避免 WebView 首帧白闪。
+#[tauri::command]
+fn show_main_window_after_boot(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        // 保留“启动时最小化到托盘”的既有语义。
+        if START_MINIMIZED.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if let Some(window) = app.get_webview_window("main") {
+            window.show().map_err(|e| e.to_string())?;
+        }
+    }
+    #[cfg(not(desktop))]
+    let _ = app;
+    Ok(())
+}
+
 #[tauri::command]
 async fn set_android_system_bar_theme(app: tauri::AppHandle, dark: bool, profile: Option<bool>, dimmed: Option<bool>) -> Result<(), String> {
     #[cfg(target_os = "android")]
@@ -1123,8 +1141,9 @@ pub fn run() {
                 // 先保存普通窗口尺寸，再在首次显示前最大化，确保点击还原能恢复普通尺寸。
                 WINDOW_MAXIMIZED.store(restore_maximized, Ordering::SeqCst);
                 if restore_maximized { w.maximize()?; }
-                // 完成窗口状态恢复后才首次显示；静默启动时继续隐藏到托盘。
-                if !START_MINIMIZED.load(Ordering::SeqCst) { w.show()?; }
+                // 完成窗口状态恢复后仍保持隐藏。前端准备好静态启动页后，
+                // 再通过 show_main_window_after_boot 显示，避免 WebView 首帧白闪。
+                // 静默启动时保持隐藏，之后仍可通过系统托盘恢复。
             }
 
             }
@@ -1453,6 +1472,7 @@ pub fn run() {
             get_platform_info,
             set_close_to_tray,
             set_window_theme,
+            show_main_window_after_boot,
             system_theme::get_linux_system_theme,
             set_android_system_bar_theme,
             get_android_safe_area_top,
