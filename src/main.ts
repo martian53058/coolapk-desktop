@@ -1,4 +1,5 @@
-import { createApp } from 'vue';
+import { createApp, nextTick } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { createPinia } from 'pinia';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -143,6 +144,18 @@ async function setupDeepLinkHandling() {
 }
 
 async function bootstrap() {
+  // 桌面窗口由 Rust 先保持隐藏。HTML 中的静态启动页已存在后再显示窗口，
+  // 避免 WebView 尚未绘制页面时暴露默认白底；start-minimized 状态由 Rust 命令兜底处理。
+  const isDesktopTauri = Boolean((window as any).__TAURI_INTERNALS__)
+    && !/android|iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (isDesktopTauri) {
+    try {
+      await invoke('show_main_window_after_boot');
+    } catch (error) {
+      console.warn('显示启动窗口失败:', error);
+    }
+  }
+
   await initializeAndroidSafeArea();
   await settingsStore.initializeSettings();
   setupAccountDeviceSync(useAuthStore(), settingsStore, CoolapkTauriAPI);
@@ -151,6 +164,11 @@ async function bootstrap() {
   // 设置文件在应用挂载前读取；缩放等依赖 #app 的外观设置需在挂载后再应用一次。
   settingsStore.applyAppearance();
   await setupDeepLinkHandling();
+  await router.isReady();
+  await nextTick();
+  // 至少让主界面完成一次绘制，再移除静态启动页，避免启动过程中露出空白根节点。
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  document.getElementById('startup-splash')?.remove();
   logDiagnostic('info', 'app', 'ready');
   const readyAt = Date.now();
   window.setInterval(() => {
