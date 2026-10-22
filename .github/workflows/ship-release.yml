@@ -1,4 +1,5 @@
 name: Bootstrap stable release
+# One-time v1.35.1 startup-rendering hotfix release.
 
 on:
   push:
