@@ -1,59 +1,54 @@
-# Security Policy
+# 本仓库安全响应说明
 
-This policy applies to the code, release packages, update logic, and build workflows maintained in this fork: [martian53058/coolapk-desktop](https://github.com/martian53058/coolapk-desktop). It is separate from the upstream project's security policy.
+本文件描述的是个人维护分支 `martian53058/coolapk-desktop` 的安全报告方式，与[上游项目](https://github.com/daimiaopeng/coolapk-desktop)的安全政策相互独立。
 
-## Supported Versions
+## 维护范围
 
-This is a personal-maintained fork. Security fixes are handled on a best-effort basis, with priority given to the latest stable release.
+我会优先评估最新稳定版中可能影响账户、隐私、本地设备或更新完整性的风险，并在能够复现且具备修复条件时尽力处理。
 
-| Version | Handling |
+| 版本类型 | 维护承诺 |
 | --- | --- |
-| Latest stable release | Best-effort assessment and fixes |
-| Older releases | No ongoing support guarantee |
-| Development builds | Use at your own risk |
+| 最新稳定版 | 尽力核查并修复已确认的安全问题 |
+| 较早版本 | 不保证继续维护，请先升级后复测 |
+| 开发中版本 | 可能包含尚未发现的问题，请谨慎使用 |
 
-There is no guaranteed response or remediation timeline.
+这是个人维护项目，没有固定的响应时限或修复期限。
 
-## Reporting a Vulnerability
+## 如何提交安全报告
 
-Please do **not** disclose exploitable details in a public issue, pull request, discussion, or release comment.
+请勿在公开 Issue、Pull Request、讨论区或评论中发布漏洞细节、可直接利用的样本、真实账号信息或未脱敏日志。
 
-1. If GitHub Private Vulnerability Reporting is enabled for this repository, use the [private reporting page](https://github.com/martian53058/coolapk-desktop/security/advisories/new).
-2. If that page is unavailable, contact the maintainer through the [GitHub profile](https://github.com/martian53058) first and ask for a private reporting channel. Do not post the vulnerability details publicly.
+1. 如果本仓库已启用 GitHub 私密漏洞报告功能，请通过[私密安全报告入口](https://github.com/martian53058/coolapk-desktop/security/advisories/new)提交。
+2. 如果该入口不可用，请先通过[维护者的 GitHub 主页](https://github.com/martian53058)联系我，询问合适的私下沟通方式；请不要因此改为公开披露漏洞细节。
 
-A useful report includes:
-- The affected release, commit, and operating system.
-- The security impact and a concise reproduction procedure.
-- Relevant logs or screenshots only after sensitive information has been removed.
-- A proposed mitigation, if you already have one.
+报告中尽可能说明：
 
-Before sharing any material, remove Cookie values, access tokens, authorization codes, account identifiers, private messages, personal files, and other sensitive data.
+- 受影响的版本、提交或构建包，以及操作系统。
+- 问题可能造成的安全影响。
+- 可以稳定复现问题的步骤。
+- 必要的截图、日志或测试样本（发送前先脱敏）。
+- 已知的缓解措施或修复建议。
 
-## Scope
+发送任何材料前，请删除 Cookie、Token、授权码、账户标识、私信、个人文件路径以及其他不应公开的信息。
 
-Examples of issues that may be in scope:
-- Exposure or unsafe storage/handling of local session credentials or private account data.
-- Unintended access to native capabilities through Tauri commands, WebView content, or permission configuration.
-- Cross-site scripting or untrusted content that can lead to a meaningful client-side security impact.
-- Unsafe deep-link handling, command execution, path traversal, or unauthorized file access.
-- Update logic that could accept tampered or unexpected packages.
-- Build or release workflows that expose secrets or publish compromised artifacts.
-- Sensitive information leaking through diagnostic logs or generated support files.
+## 哪些问题适合报告
 
-Issues in the following areas are outside this repository's direct control:
-- Vulnerabilities in Coolapk's own servers or APIs.
-- Account bans, service-side rate limits, or ordinary server-side business rules.
-- Security issues confined to unrelated third-party services.
-- A dependency advisory without a demonstrated impact on this application.
+例如：
 
-If a report concerns the upstream project rather than a change or release specific to this fork, it may also need to be reported to the [upstream repository](https://github.com/daimiaopeng/coolapk-desktop). Do not assume that reporting it here automatically notifies upstream maintainers.
+- 客户端对登录凭据、账户数据或本地隐私信息的处理可能造成泄露。
+- Tauri 命令、WebView、权限配置或深链接处理可能导致不应发生的原生操作。
+- 恶意内容或脚本能够进一步影响客户端权限、文件或账户数据。
+- 更新流程可能接受被替换、篡改或来源不可信的软件包。
+- 构建流程、发布配置或诊断输出可能泄露密钥、凭据或敏感信息。
 
-## Response and Disclosure
+如果问题完全发生在酷安服务端、酷安 API 或其他第三方服务中，本仓库维护者通常无法直接修复。若问题属于上游项目，也请考虑向[原项目仓库](https://github.com/daimiaopeng/coolapk-desktop)单独报告；向本 fork 报告不会自动通知上游维护者。
 
-The maintainer will make a reasonable effort to review reports, reproduce the issue, assess its impact, and prepare a fix or mitigation when feasible. Because this is a personal-maintained project, a response, fix, or release date cannot be guaranteed. Disclosure timing should be coordinated privately until users have a reasonable opportunity to update.
+## 收到报告后
 
-There is currently no bug bounty program.
+我会在时间和技术条件允许时尝试复现、判断影响范围、制作修复或缓解方案，并在适当时发布更新。无法保证每一份报告都会得到回复，也不承诺具体修复日期。漏洞披露时间应尽量与修复进度协调，避免在用户有机会更新之前公开可利用细节。
 
-## Safe Research
+目前本项目没有漏洞赏金计划。
 
-Please limit testing to systems and accounts you own or are authorized to test. Do not access other users' data, disrupt Coolapk services, run denial-of-service tests, or publish exploit details before coordinated disclosure.
+## 安全测试边界
+
+请只测试自己拥有或获得明确授权的账户与设备。不要访问他人数据、干扰酷安服务、进行拒绝服务测试，或在修复前公开可直接用于攻击的利用方法。
