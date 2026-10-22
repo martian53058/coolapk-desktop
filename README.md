@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/martian53058/coolapk-desktop/actions/workflows/build.yml"><img src="https://github.com/martian53058/coolapk-desktop/actions/workflows/build.yml/badge.svg?branch=main" alt="构建状态"></a>
-  <a href="https://img.shields.io/github/v/release/martian53058/coolapk-desktop"><img src="https://img.shields.io/github/v/release/martian53058/coolapk-desktop" alt="最新发布版本"></a>
+  <a href="https://github.com/martian53058/coolapk-desktop/releases"><img src="https://img.shields.io/github/v/release/martian53058/coolapk-desktop" alt="最新发布版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri" alt="Tauri 2">
 </p>
