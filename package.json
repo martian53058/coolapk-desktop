@@ -3,9 +3,9 @@
   "private": true,
   "version": "1.35.0",
   "description": "基于 Tauri 2、Vue 3 和 Rust 的非官方酷安桌面客户端",
-  "author": "daimiaopeng",
+  "author": "martian53058 (fork maintainer)",
   "license": "MIT",
-  "repository": "https://github.com/daimiaopeng/coolapk-desktop",
+  "repository": "https://github.com/martian53058/coolapk-desktop",
   "engines": {
     "node": ">=22"
   },
