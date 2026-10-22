@@ -3,7 +3,8 @@ name: Bootstrap stable release
 on:
   push:
     branches:
-      - release-bootstrap-v1.35.1
+      - main
+      - release-bootstrap-v1.35.0
     paths:
       - .github/workflows/ship-release.yml
 
