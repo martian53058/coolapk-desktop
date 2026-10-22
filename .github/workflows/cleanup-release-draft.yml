@@ -3,7 +3,7 @@ name: Cleanup stale release draft
 on:
   push:
     branches:
-      - release-bootstrap-v1.35.0
+      - release-bootstrap-v1.35.1
     paths:
       - .github/workflows/cleanup-release-draft.yml
 
@@ -17,8 +17,8 @@ jobs:
       - name: Wait for Windows assets, then remove the empty bootstrap draft
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v1.35.0
-          STALE_DRAFT_ID: "420355809"
+          TAG: v1.35.1
+          STALE_DRAFT_ID: "420398565"
         shell: bash
         run: |
           set -euo pipefail
