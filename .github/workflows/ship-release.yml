@@ -3,7 +3,7 @@ name: Bootstrap stable release
 on:
   push:
     branches:
-      - release-bootstrap-v1.35.0
+      - release-bootstrap-v1.35.1
     paths:
       - .github/workflows/ship-release.yml
 
@@ -18,8 +18,8 @@ jobs:
       - name: Ensure the release draft exists
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v1.35.0
-          SOURCE_SHA: f87e786bf1b4898a75537c5d26e917e87ca2ecdd
+          TAG: v1.35.1
+          SOURCE_SHA: 11fc9062dcb5e813e245037b4d4437ca74941ec0
         shell: bash
         run: |
           set -euo pipefail
@@ -31,18 +31,19 @@ jobs:
               --notes "## 更新内容
 
           - 修复酷安 iOS 身份协议、设备指纹与请求头生成。
-          - 修正 Token 与设备头字段解析测试。
-          - 已通过前端测试、类型检查，以及 Windows、Linux、macOS Rust 检查。
+          - 修复 Windows 启动时的白屏闪烁与短暂黑屏：主窗口在启动页就绪后显示，设置持久化与原生同步不再阻塞首屏。
+          - 保留启动最小化到托盘行为。
+          - 已通过前端单元测试、类型检查、构建检查，以及 Windows、Linux、macOS Rust 检查。
 
-          本次 Release 将由 GitHub Actions 构建 Windows 安装版、Windows 便携版及其他可用平台产物。" \
+          本次 Release 包含 Windows 安装版、Windows 单文件便携版及其他可用平台产物。" \
               --repo "$GITHUB_REPOSITORY"
           fi
 
       - name: Create the actual Git tag for the merged main commit
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v1.35.0
-          SOURCE_SHA: f87e786bf1b4898a75537c5d26e917e87ca2ecdd
+          TAG: v1.35.1
+          SOURCE_SHA: 11fc9062dcb5e813e245037b4d4437ca74941ec0
         shell: bash
         run: |
           set -euo pipefail
@@ -63,7 +64,7 @@ jobs:
       - name: Dispatch the existing release build on the new tag
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v1.35.0
+          TAG: v1.35.1
         shell: bash
         run: |
           set -euo pipefail
