@@ -2,10 +2,10 @@
 name = "coolapk_desktop"
 version = "1.35.0"
 description = "基于 Tauri 2、Vue 3 和 Rust 的非官方酷安桌面客户端"
-authors = ["daimiaopeng"]
+authors = ["martian53058 (fork maintainer)"]
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/daimiaopeng/coolapk-desktop"
+repository = "https://github.com/martian53058/coolapk-desktop"
 
 [lib]
 name = "coolapk_desktop_lib"
