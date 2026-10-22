@@ -1271,18 +1271,21 @@ impl CoolapkClient {
         };
         let app_device = ios_identity::app_device_header(&ios);
         let mut request = request;
+        // 将 UA 与当前生效的设备档案一起逐请求生成。仅依赖 Client 默认头会在
+        // 设置页修改机型后留下旧 UA，而且 RequestBuilder::build() 本身不展开默认头。
+        if let Ok(ua) = HeaderValue::from_str(&ios_identity::user_agent(&ios)) {
+            request = request.header(USER_AGENT, ua);
+        }
         if let Ok(header_value) = HeaderValue::from_str(&app_device) {
             request = request.header("X-App-Device", header_value);
         }
         // X-Sdk-Int 跟随机型档案里的 iOS 版本；其余 Android 专有头
         // （X-App-Mode / X-App-Channel / X-App-Supported / X-Dark-Mode）在 iOS
         // 身份下不再发送，与 c001apk 的 IosHeaders.headers() 保持一致。
-        if let Some(v) = HeaderValue::from_str(&ios.system_version).ok() {
+        if let Ok(v) = HeaderValue::from_str(&ios.system_version) {
             request = request.header("X-Sdk-Int", v);
         }
-        // iOS 身份下 User-Agent 统一用 iOS UA（已在 client 默认 headers 里设置），
-        // 不再用 native_device_profile 里的 Android Dalvik UA 覆盖，否则服务器
-        // 会看到 iOS App-Id + Android UA 的矛盾指纹并 403 拒绝。
+        // 不使用 native_device_profile 中旧的 Android UA，避免 iOS App-Id + Android UA 的矛盾指纹。
         Ok(request)
     }
 
