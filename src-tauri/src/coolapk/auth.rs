@@ -46,10 +46,14 @@ mod tests {
     fn token_starts_with_md5_hex_and_contains_device_id() {
         let auth = CoolapkAuth::new("A1B2C3D4-E5F6-4789-8ABC-DEF012345678");
         let token = auth.get_app_token().unwrap();
-        // md5 hex 是 32 个十六进制字符，后面紧跟 device id 和 0x... 后缀。
-        assert!(token.len() > 32 + 36 + 10, "token too short: {token}");
+        // 格式为 32 位 MD5 + 原始设备 ID + 0x + 时间戳低 32 位的十六进制值。
+        let device_id = "A1B2C3D4-E5F6-4789-8ABC-DEF012345678";
+        assert!(token.len() >= 32 + device_id.len() + 3, "token too short: {token}");
         assert!(token[..32].chars().all(|c| c.is_ascii_hexdigit()));
-        assert!(token.contains("A1B2C3D4-E5F6-4789-8ABC-DEF012345678"));
-        assert!(token.contains("0x"));
+        assert_eq!(&token[32..32 + device_id.len()], device_id);
+        let timestamp_suffix = &token[32 + device_id.len()..];
+        assert!(timestamp_suffix.starts_with("0x"));
+        assert!(!timestamp_suffix[2..].is_empty());
+        assert!(timestamp_suffix[2..].chars().all(|c| c.is_ascii_hexdigit()));
     }
 }
