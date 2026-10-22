@@ -12,7 +12,7 @@
 </p>
 
 > [!IMPORTANT]
-> **这是个人维护的 fork，不是酷安官方客户端。** 本仓库基于上游项目 [daimiaopeng/coolapk-desktop](https://github.com/daimiaopeng/coolapk-desktop) 继续维护，当前主要用于个人使用、兼容性修复、稳定性改进和构建验证。上游项目与本仓库分别维护，本仓库的改动、版本和发布计划不代表上游作者的立场或承诺。
+> **这是个人维护的 fork，不是酷安官方客户端。** 本仓库是在既有开源项目基础上继续维护的独立分支，主要用于个人使用、兼容性修复、稳定性改进和构建验证。本仓库的代码改动、版本与发布计划仅代表本仓库。
 >
 > “酷安 / Coolapk”名称、Logo、商标以及服务端内容归各自权利人所有。本项目与酷安官方及深圳酷安网络科技有限公司不存在隶属、授权或合作关系。
 
@@ -21,16 +21,13 @@
 我会优先处理自己实际使用中遇到的问题，并在必要时调整前端、Tauri/Rust 桌面端及构建流程。每次版本的具体改动以本仓库的提交记录和 Release Notes 为准；不要默认本 fork 与上游保持同步。
 
 - **本仓库：** [martian53058/coolapk-desktop](https://github.com/martian53058/coolapk-desktop)
-- **原始上游：** [daimiaopeng/coolapk-desktop](https://github.com/daimiaopeng/coolapk-desktop)
 - **发布下载：** [本仓库 Releases](https://github.com/martian53058/coolapk-desktop/releases)
 - **安全报告：** 请先阅读 [SECURITY.md](SECURITY.md)
 - **许可证与来源说明：** [LICENSE](LICENSE) · [NOTICE.md](NOTICE.md)
 
-“个人自用”描述的是本 fork 的维护目的，不是对原项目 MIT 许可证的额外限制。上游代码的原有版权和许可声明会继续保留；本仓库只对确实由本 fork 新增的内容作相应标注。
-
 ## 下载
 
-请从[本仓库的 Releases 页面](https://github.com/martian53058/coolapk-desktop/releases)下载，不要把上游 Release 当成本仓库的构建结果。每个版本实际提供哪些文件，以对应 Release 页面列出的附件为准。
+请从[本仓库的 Releases 页面](https://github.com/martian53058/coolapk-desktop/releases)下载。每个版本实际提供哪些文件，以对应 Release 页面列出的附件为准。
 
 | 平台 | 可用的构建类型 | 说明 |
 | --- | --- | --- |
@@ -118,11 +115,11 @@ Android 和 iOS 的完整构建步骤会受 SDK、签名配置与操作系统限
 
 本仓库使用 GitHub Actions 运行前端测试、类型检查、构建检查以及 Windows / Linux / macOS Rust 检查。正式版本的跨平台打包流程由 [build.yml](.github/workflows/build.yml) 管理；Android 正式包是否生成取决于所需签名 Secrets 是否配置，iOS 构建产物为未签名 IPA。
 
-如果你是本仓库维护者，发布前应确认版本号、构建结果、Release 附件及更新说明彼此一致。不要把其他仓库的构建徽章、下载链接或 Release 附件复制到本仓库的发布说明中。
+如果你是本仓库维护者，发布前应确认版本号、构建结果、Release 附件及更新说明彼此一致。
 
 ## 许可证与上游来源
 
-本仓库沿用上游的 **MIT License**。请阅读 [LICENSE](LICENSE) 了解许可文本，并查看 [NOTICE.md](NOTICE.md) 了解上游来源和第三方素材说明。上游原作者的版权声明会保留；本 fork 的新增贡献仅在实际适用范围内单独标注。
+本仓库沿用 **MIT License**。请阅读 [LICENSE](LICENSE) 了解许可文本，并查看 [NOTICE.md](NOTICE.md) 了解代码来源和第三方素材说明。原有版权声明与许可条款继续保留；本 fork 的新增贡献仅在实际适用范围内单独标注。
 
 ## 安全问题与反馈
 
@@ -130,10 +127,10 @@ Android 和 iOS 的完整构建步骤会受 SDK、签名配置与操作系统限
 
 一般功能异常请附上版本、操作系统、复现步骤和已脱敏的必要日志。请勿提交 Cookie、Token、授权码、私信内容、个人文件或其他敏感信息。个人维护者无法承诺固定响应时间，也不提供漏洞赏金计划。
 
-## 原项目参考
+## 代码来源
 
-本仓库的代码基础来自：
+本仓库基于以下开源项目进行维护：
 
-**[https://github.com/daimiaopeng/coolapk-desktop](https://github.com/daimiaopeng/coolapk-desktop)**
+**[原项目代码仓库](https://github.com/daimiaopeng/coolapk-desktop)**
 
-感谢上游项目的原始实现。此仓库用于个人维护与自用修复；如需查看上游的原始版本、上游维护政策或上游作者的发布内容，请直接访问原项目。
+此链接仅用于说明代码来源与许可关系，不代表推广、背书或官方关联。上游原有版权声明及 MIT 许可条款已保留，详见 [LICENSE](LICENSE) 和 [NOTICE.md](NOTICE.md)。
