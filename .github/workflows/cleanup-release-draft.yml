@@ -3,7 +3,7 @@ name: Cleanup stale release draft
 on:
   push:
     branches:
-      - release-bootstrap-v1.35.1
+      - release-bootstrap-v1.35.0
     paths:
       - .github/workflows/cleanup-release-draft.yml
 
