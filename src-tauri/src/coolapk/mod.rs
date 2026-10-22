@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod android_notifications;
 pub mod client;
+pub(crate) mod ios_identity;
 pub(crate) mod http_session;
 pub(crate) mod network_proxy;
 mod native_device;

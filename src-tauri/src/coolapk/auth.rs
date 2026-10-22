@@ -1,59 +1,40 @@
-//! 酷安 Token 签名器。
+//! 酷安 iOS 客户端 Token 签名器。
 //!
-//! 2025 年后酷安将客户端伪装为 iOS（iCoolMarket），Token 算法由旧版 v3 bcrypt
-//! 切换为基于 MD5 + Base64 的轻量方案：
-//! ```text
-//! part1 = md5_hex(unix_seconds)
-//! raw   = "token://com.coolapk.app/1e7870f7312eb435aef6b59b211a9880?" + part1 + "$" + device_id + "&com.coolapk.app"
-//! v9    = md5_hex( base64(raw) )
-//! token = v9 + device_id + "0x" + hex(unix_seconds)
-//! ```
-//! 该算法与 c001apk-next V1.0.8 中 `f0.f.b()` 完全一致。
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use md5::{Digest, Md5};
-use std::time::{SystemTime, UNIX_EPOCH};
+//! 原 Android v3 bcrypt 签名链路在 2026 年风控升级后失效（-415 / 验证码拦截）。
+//! 这里改为 iOS 客户端签名：token 只依赖「设备 ID + 秒级时间戳」，与 c001apk
+//! 的 `IosHeaders.appToken` 逐字节一致。
+//!
+//! 保留 `CoolapkAuth` 类型名是为了让 `client.rs` 的调用点（`get_app_token()`、
+//! `set_device_code()`）尽量少改。设备 ID 语义已从「编码后的 X-App-Device 串」
+//! 改为「原始 36 位 UUID（或登录后的 CDID）」。
 
-const TOKEN_LABEL: &str = "token://com.coolapk.app/1e7870f7312eb435aef6b59b211a9880?";
-const APP_ID: &str = "com.coolapk.app";
+use super::ios_identity::{self, IosDevice};
 
-fn md5_hex(data: &[u8]) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
-
-/// 酷安新版 Token 签名器（iOS 伪装方案）。
-///
-/// 与设备码（UUID 大写格式）绑定；切换账号/游客态时调用 [`CoolapkAuth::set_device_code`]。
 pub struct CoolapkAuth {
-    device_code: String,
+    device: IosDevice,
 }
 
 impl CoolapkAuth {
-    pub fn new(device_code: impl Into<String>) -> Self {
-        Self { device_code: device_code.into() }
+    /// `device_id` 是原始设备 ID（36 位 UUID 或 CDID）。
+    pub fn new(device_id: impl Into<String>) -> Self {
+        let mut device = IosDevice::default();
+        device.id = device_id.into();
+        Self { device }
     }
 
-    /// 运行时切换设备码（登录/切换账号/游客态之间切换时调用）。
-    pub fn set_device_code(&mut self, device_code: String) {
-        self.device_code = device_code;
+    /// 运行时切换设备 ID（登录/切换账号/游客态之间切换时调用）。
+    pub fn set_device_code(&mut self, device_id: String) {
+        self.device.id = device_id;
     }
 
-    /// 生成当前时间戳对应的 X-App-Token。
+    /// 生成当前秒级时间戳对应的 iOS `X-App-Token`。
     pub fn get_app_token(&self) -> Result<String, String> {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| format!("system clock error: {e}"))?
-            .as_secs();
-        Ok(self.generate_token_at(timestamp))
+        Ok(ios_identity::app_token(&self.device, ios_identity::now_secs()))
     }
 
-    fn generate_token_at(&self, timestamp: u64) -> String {
-        let part1 = md5_hex(timestamp.to_string().as_bytes());
-        let raw = format!("{TOKEN_LABEL}{part1}${}&{APP_ID}", self.device_code);
-        let base64_raw = BASE64.encode(raw.as_bytes());
-        let v9 = md5_hex(base64_raw.as_bytes());
-        format!("{v9}{}0x{timestamp:x}", self.device_code)
+    /// 暴露当前设备档案，供请求层同时计算 `X-App-Device` / `User-Agent`。
+    pub fn device(&self) -> &IosDevice {
+        &self.device
     }
 }
 
@@ -62,14 +43,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn token_is_deterministic_for_a_fixed_device_and_timestamp() {
-        let auth = CoolapkAuth::new("A1B2C3D4-E5F6-7890-ABCD-EF1234567890");
-        let first = auth.generate_token_at(1_792_480_360);
-        let second = auth.generate_token_at(1_792_480_360);
-        assert_eq!(first, second);
-        // 结构: md5hex(32) + uuid(36) + "0x" + hex(ts)
-        assert!(first.starts_with(|c: char| c.is_ascii_hexdigit()));
-        assert!(first.contains("A1B2C3D4-E5F6-7890-ABCD-EF1234567890"));
-        assert!(first.contains("0x"));
+    fn token_starts_with_md5_hex_and_contains_device_id() {
+        let auth = CoolapkAuth::new("A1B2C3D4-E5F6-4789-8ABC-DEF012345678");
+        let token = auth.get_app_token().unwrap();
+        // md5 hex 是 32 个十六进制字符，后面紧跟 device id 和 0x... 后缀。
+        assert!(token.len() > 32 + 36 + 10, "token too short: {token}");
+        assert!(token[..32].chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(token.contains("A1B2C3D4-E5F6-4789-8ABC-DEF012345678"));
+        assert!(token.contains("0x"));
     }
 }

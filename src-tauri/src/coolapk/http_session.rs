@@ -50,7 +50,7 @@ impl Sessions {
             Policy::Follow => builder.redirect(reqwest::redirect::Policy::limited(10)),
             Policy::NoRedirect => builder.redirect(reqwest::redirect::Policy::none()),
             Policy::Download => builder
-                .user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; MYEV3CH/A; iPhone17,3; iOS_26.7) +iCoolMarket/16.6.1-2610151")
+                .user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 (#Build; Apple; iPhone17,3; iPhone 16; iOS_26.7) +iCoolMarket/16.6.1-2610151")
                 .redirect(reqwest::redirect::Policy::limited(10)),
             Policy::Updater => builder.user_agent("coolapk-desktop-updater")
                 .redirect(reqwest::redirect::Policy::custom(|attempt| {
