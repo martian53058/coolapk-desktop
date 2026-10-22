@@ -465,15 +465,23 @@ export const useSettingsStore = defineStore('settings', () => {
       fileStore = store;
       persistenceReady = true;
       nativeSyncReady = true;
-      await syncNativeSettings(settings.value);
-      await queueFileSave(settings.value);
+      // 首屏只需等设置读取完成；原生副作用和迁移写盘不应阻塞 Vue 挂载。
+      // 这些操作保持串行/错误处理，但在后台完成，避免启动期间出现空白窗口。
+      void syncNativeSettings(settings.value).catch((err) => {
+        console.warn('后台同步原生设置失败:', err);
+      });
+      void queueFileSave(settings.value);
     } catch (err) {
       console.error('加载 settings.json 失败，将回退到 localStorage', err);
       settings.value = loadLegacySettings();
       if (!settings.value.zoomManuallySet) settings.value.zoom = getSystemZoom();
       persistenceReady = true;
       nativeSyncReady = true;
-      await syncNativeSettings(settings.value);
+      // 即使设置文件读取失败，也优先显示默认/旧版设置下的界面；
+      // 原生设置同步失败不应让启动界面一直等待。
+      void syncNativeSettings(settings.value).catch((syncErr) => {
+        console.warn('回退设置后的原生同步失败:', syncErr);
+      });
     }
   }
 
