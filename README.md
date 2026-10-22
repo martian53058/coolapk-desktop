@@ -1,243 +1,139 @@
+# Coolapk Desktop｜个人维护分支
+
 <p align="center">
-  <img src="src/assets/coolapk-logo-rounded.png" width="96" alt="酷安 Logo">
+  <strong>基于 Tauri 2、Vue 3 与 Rust 的非官方酷安客户端</strong>
 </p>
 
-<h1 align="center">酷安</h1>
-
-<p align="center">基于 Tauri 2、Vue 3 和 Rust 的非官方酷安桌面客户端。</p>
-
 <p align="center">
-  <a href="https://github.com/daimiaopeng/coolapk-desktop/actions/workflows/build.yml"><img src="https://github.com/daimiaopeng/coolapk-desktop/actions/workflows/build.yml/badge.svg" alt="构建状态"></a>
-  <a href="https://github.com/daimiaopeng/coolapk-desktop/releases"><img src="https://img.shields.io/github/v/release/daimiaopeng/coolapk-desktop?color=41b883" alt="最新版本"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT 许可证"></a>
+  <a href="https://github.com/martian53058/coolapk-desktop/actions/workflows/build.yml"><img src="https://github.com/martian53058/coolapk-desktop/actions/workflows/build.yml/badge.svg?branch=main" alt="构建状态"></a>
+  <a href="https://img.shields.io/github/v/release/martian53058/coolapk-desktop"><img src="https://img.shields.io/github/v/release/martian53058/coolapk-desktop" alt="最新发布版本"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri" alt="Tauri 2">
-  <a href="https://qm.qq.com/q/bAOWmjCfJ0"><img src="https://img.shields.io/badge/QQ群-1129528119-12B7F5?logo=tencentqq&logoColor=white" alt="QQ 交流群"></a>
 </p>
 
 > [!IMPORTANT]
-> 本项目是社区维护的非官方客户端，与酷安官方及深圳酷安网络科技有限公司无隶属、授权或合作关系。酷安名称、Logo 和相关商标归其权利人所有。
+> **这是个人维护的 fork，不是酷安官方客户端。** 本仓库基于上游项目 [daimiaopeng/coolapk-desktop](https://github.com/daimiaopeng/coolapk-desktop) 继续维护，当前主要用于个人使用、兼容性修复、稳定性改进和构建验证。上游项目与本仓库分别维护，本仓库的改动、版本和发布计划不代表上游作者的立场或承诺。
+>
+> “酷安 / Coolapk”名称、Logo、商标以及服务端内容归各自权利人所有。本项目与酷安官方及深圳酷安网络科技有限公司不存在隶属、授权或合作关系。
 
-## 📥 下载与安装
+## 项目说明
 
-请前往 [👉 GitHub Releases](https://github.com/daimiaopeng/coolapk-desktop/releases) 获取各平台的最新版本程序包：
+我会优先处理自己实际使用中遇到的问题，并在必要时调整前端、Tauri/Rust 桌面端及构建流程。每次版本的具体改动以本仓库的提交记录和 Release Notes 为准；不要默认本 fork 与上游保持同步。
 
-| 操作系统 | 文件格式 | 推荐安装包 |
-| :--- | :--- | :--- |
-| **Windows 安装版** | `.exe` | `coolapk-desktop_x.x.x_x64-setup.exe` (x64) / `arm64-setup.exe` (ARM64) |
-| **Windows 单文件版** | `.exe` | `coolapk-desktop_x.x.x_x64-portable.exe` (x64) / `arm64-portable.exe` (ARM64) |
-| **macOS** | `.dmg` / `.app` | `coolapk-desktop_x.x.x_aarch64.dmg` (Apple 芯片) / `x64.dmg` (Intel 芯片) |
-| **Linux** | `.AppImage` / `.deb` / `.rpm` | `coolapk-desktop_x.x.x_amd64.AppImage` / `.deb` / `.rpm` |
-| **Android** | `.apk` / `.aab` | `coolapk-vx.y.z-android-arm64.apk` / `coolapk-vx.y.z-android-arm64.aab` |
-| **iPhone / iPad** | `.ipa` | `coolapk-vx.y.z-ios-arm64-unsigned.ipa`（未签名，需自行签名安装） |
+- **本仓库：** [martian53058/coolapk-desktop](https://github.com/martian53058/coolapk-desktop)
+- **原始上游：** [daimiaopeng/coolapk-desktop](https://github.com/daimiaopeng/coolapk-desktop)
+- **发布下载：** [本仓库 Releases](https://github.com/martian53058/coolapk-desktop/releases)
+- **安全报告：** 请先阅读 [SECURITY.md](SECURITY.md)
+- **许可证与来源说明：** [LICENSE](LICENSE) · [NOTICE.md](NOTICE.md)
 
-> 💡 **提示**：构建产物均由 GitHub Actions 自动化流程在云端打包。Windows 单文件版无需解压或安装，系统需已有 WebView2 Runtime。iOS IPA 为未签名设备包，不能直接安装到普通 iPhone/iPad，需要使用 AltStore、SideStore、Sideloadly 或自己的 Apple 证书完成签名。
+“个人自用”描述的是本 fork 的维护目的，不是对原项目 MIT 许可证的额外限制。上游代码的原有版权和许可声明会继续保留；本仓库只对确实由本 fork 新增的内容作相应标注。
 
-## 💬 QQ 交流群
+## 下载
 
-点击链接加入群聊 **[【coolapk-desktop反馈群】](https://qm.qq.com/q/bAOWmjCfJ0)**，或扫码 / 搜索群号 **1129528119** 加入：
+请从[本仓库的 Releases 页面](https://github.com/martian53058/coolapk-desktop/releases)下载，不要把上游 Release 当成本仓库的构建结果。每个版本实际提供哪些文件，以对应 Release 页面列出的附件为准。
 
-<a href="https://qm.qq.com/q/bAOWmjCfJ0"><img src="docs/qq-group.png" width="260" alt="QQ 交流群二维码 (1129528119)"></a>
+| 平台 | 可用的构建类型 | 说明 |
+| --- | --- | --- |
+| Windows x64 | 安装版、单文件便携版 | 适用于常见的 Intel / AMD 64 位 Windows 设备 |
+| Windows ARM64 | 安装版、单文件便携版 | 适用于 Windows on ARM |
+| macOS | DMG / APP | 提供 Apple 芯片与 Intel 架构构建 |
+| Linux x64 | AppImage、DEB、RPM | 以该版本 Release 实际附件为准 |
+| iOS ARM64 | 未签名 IPA | 需要自行完成签名后才能安装 |
+| Android ARM64 | APK / AAB | Release 签名构建依赖仓库的 Android 签名 Secrets；未配置时可能不发布 |
 
-## 界面预览
+Windows 便携版适合不想执行传统安装流程的场景。首次运行前，请确认系统满足对应平台的 Tauri/WebView 运行要求。对于未签名的 iOS IPA，请勿将其误认为可直接安装或可直接提交 App Store 的正式发行包。
 
-![界面预览 1](docs/screenshots/首页.png)
+## 功能概览
 
-![界面预览 2](docs/screenshots/2.png)
+当前代码包含以下主要能力，具体可用性可能随酷安服务端接口、账号权限和客户端版本变化：
 
-![界面预览 3](docs/screenshots/3.png)
+- 浏览首页信息流、分类频道、动态详情与评论。
+- 搜索动态、用户、话题、应用及游戏等内容。
+- 使用点赞、收藏、关注等互动功能。
+- 查看浏览记录、管理收藏，并使用主题和布局相关设置。
+- 支持账号登录及多账号切换；部分场景可通过手动导入 Cookie 登录。
+- 在客户端内使用私信等互动功能。
+- 使用 Windows、macOS、Linux 桌面端，并保留 Android / iOS 移动端构建路径。
 
-![界面预览 5](docs/screenshots/5.png)
+部分能力依赖酷安服务端，接口、登录流程或风控策略变化可能导致功能暂时不可用。本 fork 不保证能够绕过服务端限制，也不承诺所有平台的每个功能完全一致。
 
-![界面预览 6](docs/screenshots/6.png)
+## 隐私与凭据
 
-![界面预览 7](docs/screenshots/7.png)
+- 登录 Cookie、Token、私信和诊断信息都应视为敏感数据。
+- 不要将真实凭据、个人私信、完整日志或账户数据提交到公开仓库。
+- 分享诊断文件前，请先检查文件内容并确认接收方可信；任何可访问的分享链接都可能暴露其中的信息。
+- 本客户端会与酷安相关服务通信。实际网络请求和本地数据行为以当前版本代码为准；如需确认，请检查相应版本的源代码，而不要只依赖本说明。
 
-## Star 走势
+如怀疑凭据泄露，请立即在相关服务侧撤销或更新凭据，并避免继续传播原始日志。
 
-<a href="https://star-history.com/#daimiaopeng/coolapk-desktop&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=daimiaopeng/coolapk-desktop&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=daimiaopeng/coolapk-desktop&type=Date" />
-   <img alt="Star 走势趋势图" src="https://api.star-history.com/svg?repos=daimiaopeng/coolapk-desktop&type=Date" />
- </picture>
-</a>
+## 本地开发
 
-## 贡献者
-
-[![贡献者](https://contrib.rocks/image?repo=daimiaopeng/coolapk-desktop)](https://github.com/daimiaopeng/coolapk-desktop/graphs/contributors)
-
-## 下载量统计图
-
-[![下载量统计图](https://release-monitor.com/chart/daimiaopeng/coolapk-desktop.svg?stable=5)](https://release-monitor.com/#/daimiaopeng/coolapk-desktop)
-
-## 功能
-
-- **首页信息流**：推荐、热榜、快讯、酷图、二手、数码、评测等频道一应俱全
-- **动态浏览**：图文详情、评论楼中楼、热门爆评、点赞、收藏、转发查看，体验顺畅
-- **浏览历史**：时间轴轨迹记录，支持动态、用户、话题与应用分类即时筛选及右侧常逛侧边栏
-- **关注与粉丝**：双列响应式布局，支持查看已关注酷友及粉丝列表、实时动态与全量自动翻页
-- **搜索直达**：全站综合搜索涵盖应用、游戏、用户、话题与动态帖子
-- **收藏管理**：集成云端收藏与收藏单合集，支持全屏满幅平铺浏览
-- **广场中心**：涵盖话题广场、评测区、应用中心与游戏中心
-- **私信聊天**：支持文字与图片消息，支持多账号快速切换
-- **账号能力**：官方授权或 Cookie 登录（详见 [手动抓取与导入 Cookie 指南](docs/cookie-guide.md)），多账户本地保存与一键切账号
-- **个性化与布局**：全屏无边距满幅平铺、深浅色主题、侧边栏折叠与默认启动页设置
-- **跨平台**：Windows、macOS、Linux 原生桌面应用，以及 Android、iOS 移动端应用
-
-部分功能依赖酷安服务端接口，可能因官方调整、账号权限或风控策略而临时失效。
-
-## 隐私与网络访问
-
-- 项目不内置个人 Cookie、账号 Token、统计 SDK 或遥测服务。
-- 登录凭据由用户手动输入，只保存在本地应用数据目录的账户库中，不写入仓库。
-- 客户端标识在每次启动时临时生成，不使用开发者或用户的固定设备指纹。
-- 应用会直接访问 `api.coolapk.com`、酷安图片/静态资源域名；不会向第三方字体或图标 CDN 发起请求。
-- 请勿在 Issue、日志或截图中提交真实 Cookie、私信和其他个人数据。
-- 一键私信反馈可取消勾选“附带脱敏诊断日志”。勾选时，最近最多 512 KB 的脱敏日志会以最高等级 DEFLATE 压缩为标准 ZIP，追加到 64×64 PNG 小图，避免此前大图触发的水印与重新编码。上传后会下载文件，逐字节验证与上传前一致，再在文字私信中发送图片链接。持有链接的人可读取附件；接收者可点击“查看诊断日志”，或在设置 → 诊断日志中粘贴私信链接、选择浏览器从该链接保存的 PNG，提取、复制或导出文本。新文件也可改为 .zip 后用解压软件打开。缩略图和截图无法提取附件。
-
-详见 [SECURITY.md](SECURITY.md)。
-
-## 开发环境
+### 环境要求
 
 - Node.js 22 或更高版本
-- Rust stable
-- 各平台的 [Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)
+- Rust stable 工具链
+- 对应操作系统所需的 [Tauri 2 构建依赖](https://v2.tauri.app/start/prerequisites/)
+- Android 构建需要额外的 JDK、Android SDK 与 NDK；iOS 构建需要 macOS、Xcode 和 CocoaPods
 
-```bash
-git clone https://github.com/daimiaopeng/coolapk-desktop.git
+### 获取代码并运行
+
+~~~bash
+git clone https://github.com/martian53058/coolapk-desktop.git
 cd coolapk-desktop
 npm ci
-npm run tauri dev
-```
+npm run tauri -- dev
+~~~
 
-生产构建可按当前平台选择产物格式：
+### 常用检查
 
-```bash
-# Windows：构建 NSIS 安装包；原始 release 可执行文件即单文件版
+~~~bash
+npm test
+npm run typecheck
+npm run build
+
+cd src-tauri
+cargo check
+cargo test --lib
+~~~
+
+### 本地构建示例
+
+~~~bash
+# Windows：NSIS 安装包
 npm run tauri build -- --bundles nsis
+
+# Windows：单文件便携版（在 PowerShell 中执行）
 ./scripts/prepare-windows-portable.ps1 -Architecture x64
 
-# Linux
-npm run tauri build -- --bundles appimage,deb,rpm
+# Linux：系统安装包和 AppImage
+npm run tauri build -- --bundles deb,rpm,appimage
 
 # macOS
 npm run tauri build -- --bundles app,dmg
-```
+~~~
 
-### Android APK
+Android 和 iOS 的完整构建步骤会受 SDK、签名配置与操作系统限制影响。可从仓库中的构建脚本和 [build.yml](.github/workflows/build.yml) 查看当前实现；请勿把签名文件、密码或 Token 写进源码、提交记录或公开日志。
 
-Android 构建需要 JDK 17+、Android SDK、Platform Tools、Build Tools 和 NDK (Side by side)。Windows 下构建脚本会自动读取 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME`，也能识别默认 Android SDK 和本项目使用的 Android OpenJDK 安装位置。
+## 自动构建与发布
 
-```bash
-# 首次生成 Android 工程（生成目录不会提交到 Git）
-npm run android:init
+本仓库使用 GitHub Actions 运行前端测试、类型检查、构建检查以及 Windows / Linux / macOS Rust 检查。正式版本的跨平台打包流程由 [build.yml](.github/workflows/build.yml) 管理；Android 正式包是否生成取决于所需签名 Secrets 是否配置，iOS 构建产物为未签名 IPA。
 
-# 默认构建 ARM64 debug APK，适用于大多数真机
-npm run android:build
+如果你是本仓库维护者，发布前应确认版本号、构建结果、Release 附件及更新说明彼此一致。不要把其他仓库的构建徽章、下载链接或 Release 附件复制到本仓库的发布说明中。
 
-# 自定义目标，例如生成全部架构的 debug APK
-npm run android:build -- --debug --apk
-```
+## 许可证与上游来源
 
-APK 输出到 `src-tauri/gen/android/app/build/outputs/apk/`。连接设备后可用 `adb install -r <apk路径>` 安装。正式分发前还需配置 Android 签名；Google Play 应优先构建并上传 AAB。
+本仓库沿用上游的 **MIT License**。请阅读 [LICENSE](LICENSE) 了解许可文本，并查看 [NOTICE.md](NOTICE.md) 了解上游来源和第三方素材说明。上游原作者的版权声明会保留；本 fork 的新增贡献仅在实际适用范围内单独标注。
 
-Tag 发布时，GitHub Actions 会构建签名的 ARM64 release APK 和 AAB，并上传到同一个 GitHub Release。仓库需要配置以下 Actions Secrets：
+## 安全问题与反馈
 
-- `ANDROID_KEYSTORE_BASE64`：上传密钥 `.jks` 文件的 Base64 内容
-- `ANDROID_KEYSTORE_PASSWORD`：密钥库密码
-- `ANDROID_KEY_ALIAS`：密钥别名
-- `ANDROID_KEY_PASSWORD`：密钥密码
+如果发现可能影响本客户端账户、隐私、设备或更新完整性的安全问题，请先阅读 [SECURITY.md](SECURITY.md)，不要公开发布漏洞细节、可利用样本或真实账号数据。
 
-安装包位于 `src-tauri/target/release/bundle/`。GitHub Actions 会提供：
+一般功能异常请附上版本、操作系统、复现步骤和已脱敏的必要日志。请勿提交 Cookie、Token、授权码、私信内容、个人文件或其他敏感信息。个人维护者无法承诺固定响应时间，也不提供漏洞赏金计划。
 
-- Windows x64：NSIS 安装包 `-setup.exe`、单文件便携版 `x64-portable.exe`
-- Windows ARM64：NSIS 安装包 `-setup.exe`、单文件便携版 `arm64-portable.exe`
-- Linux x64：AppImage 免安装版 `.AppImage`、Debian 安装包 `.deb`、RPM 安装包 `.rpm`
-- macOS Apple 芯片：磁盘映像 `.dmg`、应用包 `.app`
-- macOS Intel：磁盘映像 `.dmg`、应用包 `.app`
-- Android ARM64：Release APK `.apk`、Google Play 发布包 `.aab`
-- iOS ARM64：未签名 IPA `.ipa`（供第三方工具或用户自行签名）
+## 原项目参考
 
-### iOS IPA
+本仓库的代码基础来自：
 
-iOS 构建必须在 macOS 上完成，并需要完整的 Xcode、CocoaPods 和 Rust iOS 目标。首次构建前，在 macOS 上执行：
+**[https://github.com/daimiaopeng/coolapk-desktop](https://github.com/daimiaopeng/coolapk-desktop)**
 
-```bash
-# 安装 CocoaPods（已安装可跳过）
-brew install cocoapods
-
-# 安装 Rust iOS 目标
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
-
-# 首次生成 iOS 工程
-npm run tauri -- ios init
-
-# 使用 Xcode 打开并调试
-npm run tauri -- ios dev --open
-
-# 构建设备版未签名 IPA
-npm run tauri -- ios build --target aarch64 --no-sign --ci
-```
-
-GitHub Actions 会在推送 `v*` 版本标签时自动生成 ARM64 未签名 IPA，并上传到对应的 GitHub Release。该 IPA 不包含 Apple 开发者签名，安装到真机前需要使用 AltStore、SideStore、Sideloadly 或自己的证书重新签名；它不是可直接提交 App Store 的发行包。
-
-## 自动发布
-
-推送以 `v` 开头的版本标签后，GitHub Actions 会自动构建全部平台，并创建公开的 GitHub Release，上传上述安装包。普通的 `main` 分支推送和 Pull Request 只执行构建检查，不会发布版本。
-
-发布前只需更新 `src/constants/version.ts` 并创建对应标签，GitHub Actions 会从标签自动同步版本号到全部构建文件：
-
-```bash
-npm run version:set -- 1.2.3
-npm run build
-git tag v1.2.3
-git push origin main v1.2.3
-```
-
-Windows 客户端会自动识别当前运行方式：安装版下载同架构的 `-setup.exe` 静默升级，单文件版下载同架构的 `-portable.exe`，退出后原位替换并重启。两种更新包都必须与 Release 标签版本一致，避免装错版本。
-
-## 常用检查
-
-```bash
-npm run build
-npm audit
-cd src-tauri
-cargo test
-cargo check
-```
-
-## 项目结构
-
-```text
-src/                         Vue 3 / TypeScript 前端
-  api/coolapk.ts             Tauri 命令调用封装
-  utils/coolapkEmoji.ts      酷安表情映射
-src-tauri/                   Rust / Tauri 桌面端
-  src/coolapk/auth.rs        Token V3 兼容签名
-  src/coolapk/client.rs      API、图片和会话请求
-  src/coolapk/commands.rs    Tauri commands
-  src/coolapk/api_tests.rs   接口可用性探测测试
-docs/screenshots/            界面预览截图
-.github/workflows/build.yml  跨平台构建流程
-```
-
-## 登录说明
-
-公开浏览功能（查看动态、评论、图文等）无需登录即可使用。若需发帖、评论、点赞、私信等互动操作，可在客户端右上角唤起登录弹窗：
-
-1. **官方授权登录（推荐）**：
-   - 客户端内置调起酷安官方授权登录页面（`account.coolapk.com`），支持微信扫码与手机短信验证码登录，登录成功后自动同步会话与多账号库。
-2. **手动 Cookie 导入（备用）**：
-   - 若系统未安装完整 WebView2 或官方窗口授权异常，可展开弹窗底部的「备用登录选项」，通过浏览器抓取 Cookie 凭据进行导入。
-   - 详细提取与配置步骤请参阅：👉 **[📖 手动抓取与导入 Cookie 指南](docs/cookie-guide.md)**（包含保留日志、定位主站请求与凭据有效性校验步骤）。
-
-> ⚠️ **凭据安全提示**：Cookie 包含账号的完整操作权限。客户端仅将其安全持久化在本地应用数据目录中，绝不写入代码仓库或上传任何第三方服务器。请妥善保管，切勿在公开 Issue、日志或聊天截图中泄露真实 Cookie。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request。提交前请运行前端构建、Rust 测试，并确保测试数据不包含真实账号、Cookie、设备标识或私信内容。
-
-
-## 许可证
-
-代码采用 [MIT 许可证](LICENSE)。第三方品牌、Logo、表情及服务端内容不包含在 MIT 授权范围内，详见 [第三方声明](NOTICE.md)。
+感谢上游项目的原始实现。此仓库用于个人维护与自用修复；如需查看上游的原始版本、上游维护政策或上游作者的发布内容，请直接访问原项目。
